@@ -1,0 +1,11 @@
+[package]
+name = "sagex_ui"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "sagex_ui"
+path = "src/main.rs"
+
+[dependencies]
+gpui = "0.2.2"

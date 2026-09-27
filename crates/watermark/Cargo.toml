@@ -15,3 +15,7 @@ rustfft = { version = "=6.2.0" }
 ndarray = { version = "=0.16.1" }
 clap = { version = "=4.5.20", features = ["derive"] }
 num-complex = { version = "=0.4.6" }
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]

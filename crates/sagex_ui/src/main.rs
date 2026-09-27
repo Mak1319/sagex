@@ -1,64 +1,60 @@
-use gpui::{
-    App, Application, Bounds, ClickEvent, Context, Window, WindowBounds, WindowOptions, div,
-    prelude::*, px, rgb, size,
-};
+mod app;
+mod assets;
+mod chat;
+mod component;
+mod fonts;
+mod pages;
 
-struct HelloWorld {
-    count: usize,
-}
-
-impl Render for HelloWorld {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .bg(rgb(0x505050))
-            .size(px(500.0))
-            .justify_center()
-            .items_center()
-            .shadow_lg()
-            .border_1()
-            .border_color(rgb(0x0000ff))
-            .text_xl()
-            .text_color(rgb(0xffffff))
-            .child("Hello, World!".to_string())
-            .child(format!("Clicks: {}", self.count))
-            .child(
-                div()
-                    .id("counter-button")
-                    .flex()
-                    .px_4()
-                    .py_2()
-                    .bg(rgb(0x2e7d32))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(0x388e3c)))
-                    .active(|style| style.bg(rgb(0x1b5e20)))
-                    .child("Click me!")
-                    .on_click(cx.listener(
-                        |this, _event: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>| {
-                            this.count += 1;
-                            cx.notify();
-                        },
-                    )),
-            )
-    }
-}
+use assets::SvgAssets;
+use chat::ChatApp;
+use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui_component::{Root, Theme, input::InputState};
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(500.0), px(500.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |_, cx| {
-                cx.new(|_| HelloWorld { count: 0 })
-            },
-        )
-        .unwrap();
-        cx.activate(true);
-    });
+    Application::new()
+        .with_assets(SvgAssets)
+        .run(|cx: &mut App| {
+            // Must be called before using any gpui-component features.
+            gpui_component::init(cx);
+            // Color emoji for the picker Grids (best effort, logs when missing).
+            fonts::register_emoji_font(cx);
+
+            let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    // Follow the OS appearance for the initial paint.
+                    Theme::sync_system_appearance(Some(window), cx);
+
+                    // Chat launches on start (auth kept separate in `app`/`pages`).
+                    let search = cx.new(|cx| InputState::new(window, cx));
+                    let composer = cx.new(|cx| InputState::new(window, cx));
+                    let emoji_search =
+                        cx.new(|cx| InputState::new(window, cx).placeholder("Search emoji"));
+                    let view = cx.new(|_| ChatApp::new(search, composer, emoji_search));
+
+                    // Live-follow OS light/dark while System mode is on.
+                    let sub = window.observe_window_appearance({
+                        let view = view.clone();
+                        move |window, cx| {
+                            view.update(cx, |this, cx| {
+                                if this.theme_mode.is_system() {
+                                    Theme::sync_system_appearance(Some(window), cx);
+                                }
+                            });
+                        }
+                    });
+                    view.update(cx, |this, _| {
+                        this.appearance_sub = Some(sub);
+                    });
+
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )
+            .unwrap();
+            cx.activate(true);
+        });
 }

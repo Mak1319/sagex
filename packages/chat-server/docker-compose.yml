@@ -1,0 +1,46 @@
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: chatroot
+      MONGO_INITDB_ROOT_PASSWORD: chatsecret
+      MONGO_INITDB_DATABASE: chatdb
+    ports:
+      - "27017:27017"
+    volumes:
+      - chat-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chat-server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://chatroot:chatsecret@mongo:27017/chatdb?authSource=admin
+      PORT: 3001
+    ports:
+      - "3001:3001"
+
+  mongo-express:
+    image: mongo-express:1
+    profiles: ["tools"]
+    depends_on:
+      - mongo
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: chatroot
+      ME_CONFIG_MONGODB_ADMINPASSWORD: chatsecret
+      ME_CONFIG_MONGODB_URL: mongodb://chatroot:chatsecret@mongo:27017/
+    ports:
+      - "8081:8081"
+
+volumes:
+  chat-mongo-data:

@@ -9,3 +9,9 @@ path = "src/main.rs"
 
 [dependencies]
 gpui = "0.2.2"
+gpui-component = "0.5.1"
+anyhow = "1"
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]

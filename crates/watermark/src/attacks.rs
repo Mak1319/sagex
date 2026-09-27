@@ -13,6 +13,7 @@ use image::{Rgb, RgbImage};
 
 /// Parsed attack chain. Each field `None` means "skip".
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AttackSpec {
     /// Degrees counter-clockwise.
     pub rotate_deg: Option<f32>,

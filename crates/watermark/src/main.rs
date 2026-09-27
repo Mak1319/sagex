@@ -19,6 +19,7 @@ use ndarray::Array2;
 // ---------------------------------------------------------------- CLI ---
 
 #[derive(Parser)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[command(name = "watermark", about = "Hybrid DWT-DCT-DFT image watermarking")]
 struct Cli {
     #[command(subcommand)]
@@ -26,6 +27,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 enum Cmd {
     /// Embed a payload into a cover image.
     Embed {

@@ -38,6 +38,7 @@ pub const NUM_PEAKS: usize = 16;
 pub const DEFAULT_STRENGTH: f32 = 4000.0;
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Detection {
     /// Estimated rotation in degrees (counter-clockwise positive).
     pub theta_deg: f32,

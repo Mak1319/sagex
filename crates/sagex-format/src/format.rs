@@ -1,7 +1,7 @@
 use binrw::binrw;
 use sagex_crypto::aes::KeyEncapsulation;
 
-use crate::ecc::calculate_ecc;
+use crate::ecc::{ECC_LEN, EccChunk, calculate_ecc};
 
 pub const MAGIC_NUMBER: u32 = 0x00106E5A; // This will be written as 5A6E10 in short SAGE X 
 pub const VERSION: u32 = 1;
@@ -44,14 +44,19 @@ pub struct PrivateFileFormatInternal {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PrivateFileFormatExternal {
     pub internal: PrivateFileFormatInternal,
-    #[bw(calc = ecc.len() as u32)]
+
+    #[br(temp, calc = Vec::new())]
+    #[bw(try_calc = calculate_ecc(internal))]
+    __eccs_computed: Vec<EccChunk>,
+
+    #[bw(calc = __eccs_computed.len() as u32)]
     #[br(temp)]
     #[cfg_attr(feature = "serde", serde(skip))]
     ecc_len: u32,
 
     #[br(count = ecc_len)]
-    #[bw(calc = calculate_ecc(internal))]
-    pub ecc: Vec<u8>,
+    #[bw(calc = __eccs_computed.clone())]
+    pub ecc: Vec<EccChunk>,
 
     #[bw(calc = identity.len() as u32)]
     #[br(temp)]

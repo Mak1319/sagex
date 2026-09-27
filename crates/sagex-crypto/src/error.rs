@@ -1,15 +1,10 @@
-#[derive(thiserror::Error, Debug)]
-pub enum VaultError {
-    #[error("key generation failed: {0}")]
-    KeyGen(String),
-    #[error("TPM error: {0}")]
-    Tpm(String),
-    #[error("PKCS#11/HSM error: {0}")]
-    Pkcs(String),
-    #[error("storage error: {0}")]
-    Storage(String),
-    #[error("no backend available")]
-    NoBackend,
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SageXCryptoError {
+    AESCreationError,
+    NonceIterationError,
+    AESEncryptionError,
+    AESDecryptionError,
 }
 
-pub type Result<T> = std::result::Result<T, VaultError>;
+pub type SageXResult<T> = Result<T, SageXCryptoError>;

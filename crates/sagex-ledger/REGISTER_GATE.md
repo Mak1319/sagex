@@ -1,5 +1,9 @@
 # Register gate — ingress contract (sole writer)
 
+> Implemented as `crates/sagex-gateway` (`sagex-gateway` binary): HTTP
+> `POST /register` intake, SQLite outbox, ledger failover, query proxy.
+> This document is the wire contract the gateway speaks to ledger nodes.
+
 The register gate is **not** implemented here. It is the only component allowed to
 submit decryption records. Any node accepts `Submit` over TCP and forwards to the
 PBFT leader; all nodes commit the same block (`1 record = 1 block`).

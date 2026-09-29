@@ -1,0 +1,13 @@
+# sagex-gateway config (copy to gateway.toml and edit)
+[server]
+listen = "127.0.0.1:8080"
+
+[ledger]
+nodes = ["127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003"]
+submit_timeout_ms = 15000
+query_timeout_ms = 5000
+
+[outbox]
+db = "data/gateway.db"
+retry_interval_ms = 2000
+retry_batch = 32

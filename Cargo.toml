@@ -11,5 +11,6 @@ members = [
     "crates/sagex-certauth",
     "crates/sagex-chatsrv",
     "crates/sagex-ledger",
+    "crates/sagex-gateway",
 ]
 resolver = "3"

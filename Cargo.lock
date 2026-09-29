@@ -6895,6 +6895,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sagex-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum 0.7.9",
+ "chrono",
+ "clap",
+ "reqwest",
+ "rusqlite",
+ "sagex-ledger",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "sagex-ledger"
 version = "0.1.0"
 dependencies = [

@@ -1,4 +1,4 @@
-use crate::{ecc::error::EccError, format::PrivateFileFormatInternal};
+use crate::{ecc::error::EccError, format::PrivateInternal};
 use binrw::BinWrite;
 use reed_solomon::Encoder;
 
@@ -50,7 +50,7 @@ pub mod error {
     }
 }
 
-pub fn calculate_ecc(ke: &PrivateFileFormatInternal) -> Result<Vec<EccChunk>, EccError> {
+pub fn calculate_ecc(ke: &PrivateInternal) -> Result<Vec<EccChunk>, EccError> {
     let mut buf = Vec::new();
     ke.write(&mut std::io::Cursor::new(&mut buf))
         .map_err(|_e| EccError::Serialize)?;

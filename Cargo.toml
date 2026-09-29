@@ -1,3 +1,12 @@
 [workspace]
-members = ["crates/watermark", "crates/sagex_ui", "crates/sagex-crypto", "crates/sagex_test", "crates/sagex-format", "crates/sagex-appx"]
+members = [
+    "crates/watermark",
+    "crates/office-watermark",
+    "crates/office-watermark-demo",
+    "crates/sagex_ui",
+    "crates/sagex-crypto",
+    "crates/sagex_test",
+    "crates/sagex-format",
+    "crates/sagex-appx",
+]
 resolver = "3"

@@ -5,6 +5,14 @@ pub enum SageXCryptoError {
     NonceIterationError,
     AESEncryptionError,
     AESDecryptionError,
+    MLDSASecretKeyDerivationFailed,
+    MLDSASignatureDerivationFailed,
+    MLDSAPublicKeyDerivationFailed,
+    MLDSASignatureVerificationFailed,
+
+    MLKEMPublicKeyDerivationFailed,
+    MLKEMSecretKeyDerivationFailed,
+    MLKEMCipherDerivationError,
 }
 
 pub type SageXResult<T> = Result<T, SageXCryptoError>;

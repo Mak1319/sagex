@@ -1,4 +1,8 @@
 /target
 /node_modules
+/realfiles
 /test-*
 # Screenshot_*
+/*test*
+molecular-svg-nextjs
+.cursor

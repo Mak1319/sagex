@@ -1,15 +1,14 @@
-use std::fs::File;
-#[cfg(feature = "serde")]
-use std::{fs::OpenOptions, io::Write};
-
 use sagex_crypto::{
     aes::ITERATIONS,
     pqc::{dsa, kem},
 };
 use sagex_format::format::{
-    KeyDerivatinMechanism::Password, MAGIC_NUMBER, PrivateFileFormatExternal,
-    PrivateFileFormatInternal, PublicFileFormatExternal, PublicFileFormatInternal, VERSION,
+    KeyDerivatinMechanism::Password, MAGIC_NUMBER, PrivateExternal, PrivateInternal,
+    PublicFileFormatExternal, PublicInternal, VERSION,
 };
+use std::fs::File;
+#[cfg(feature = "serde")]
+use std::{fs::OpenOptions, io::Write};
 
 use binrw::BinWrite;
 
@@ -17,10 +16,10 @@ fn main() {
     let (kem_enc, kem_pk) = kem::KeyGen::generate_from_password(b"hi this is awesome")
         .expect("KEM Key encryption failed");
 
-    let (dsa_enc, _dsa_pk) = dsa::KeyGen::generate_from_password(b"hi this is awesome")
+    let (dsa_enc, dsa_pk) = dsa::KeyGen::generate_from_password(b"hi this is awesome")
         .expect("DSA key encryption failed");
 
-    let pfi = PrivateFileFormatInternal {
+    let pfi = PrivateInternal {
         magic_number: MAGIC_NUMBER,
         version: VERSION,
         iteration_count: ITERATIONS as usize,
@@ -31,10 +30,6 @@ fn main() {
         user_name: "mainak manna".into(),
     };
 
-    // bincode::en
-    // bincode::
-
-    // let bytes: Vec<u8> = postcard::to_allocvec(&pfi).expect("Can not serialize the files");
     #[cfg(feature = "serde")]
     {
         let bytes: Vec<u8> = postcard::to_allocvec(&pfi).expect("Can not serialize the files");
@@ -48,16 +43,7 @@ fn main() {
         file.write_all(&bytes).expect("Can not write to file");
     }
 
-    // #[cfg(not(feature = "serde"))]
-    // {
-    //     let _ = &pfi;
-    //     eprintln!("serde feature disabled: skipping serialization (run with --features serde)");
-    // }
-
-    // --- private side (.prv) ---
-    // `ecc` is recomputed on write by the format's try_calc wiring, so the
-    // struct carries no `ecc` field to fill — only `internal` + `identity`.
-    let prv = PrivateFileFormatExternal {
+    let prv = PrivateExternal {
         internal: pfi,
         identity: b"mainak manna".to_vec(),
     };
@@ -65,10 +51,11 @@ fn main() {
     prv.write(&mut prv_file).expect("Can not write .prv file");
 
     // --- public side (.pub) ---
-    let pub_in = PublicFileFormatInternal {
+    let pub_in = PublicInternal {
         magic_number: MAGIC_NUMBER,
         version: VERSION,
-        key: kem_pk,
+        key_kem: kem_pk,
+        key_dsa: dsa_pk,
         user_name: "mainak manna".into(),
     };
     let publ = PublicFileFormatExternal {

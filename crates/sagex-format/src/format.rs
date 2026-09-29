@@ -1,7 +1,7 @@
 use binrw::binrw;
 use sagex_crypto::aes::KeyEncapsulation;
 
-use crate::ecc::{ECC_LEN, EccChunk, calculate_ecc};
+use crate::ecc::{EccChunk, calculate_ecc};
 
 pub const MAGIC_NUMBER: u32 = 0x00106E5A; // This will be written as 5A6E10 in short SAGE X 
 pub const VERSION: u32 = 1;
@@ -14,10 +14,11 @@ pub enum KeyDerivatinMechanism {
     Password,
 }
 
+/// Internal structure of an key
 #[binrw]
-#[brw(little, magic = 0x00106E5Au32)]
+#[brw(little)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PrivateFileFormatInternal {
+pub struct PrivateInternal {
     pub magic_number: u32,
     pub version: u32,
     pub key_encapsulation_kem: KeyEncapsulation,
@@ -42,8 +43,8 @@ pub struct PrivateFileFormatInternal {
 #[binrw]
 #[brw(little)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PrivateFileFormatExternal {
-    pub internal: PrivateFileFormatInternal,
+pub struct PrivateExternal {
+    pub internal: PrivateInternal,
 
     #[br(temp, calc = Vec::new())]
     #[bw(try_calc = calculate_ecc(internal))]
@@ -68,18 +69,25 @@ pub struct PrivateFileFormatExternal {
 }
 
 #[binrw]
-#[brw(little, magic = 0x00106E5Au32)]
+#[brw(little)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PublicFileFormatInternal {
+pub struct PublicInternal {
     pub magic_number: u32,
     pub version: u32,
-    #[bw(calc = key.len() as u32)]
+    #[bw(calc = key_kem.len() as u32)]
     #[br(temp)]
     #[cfg_attr(feature = "serde", serde(skip))]
-    key_len: u32,
+    kem_key_len: u32,
 
-    #[br(count = key_len)]
-    pub key: Vec<u8>,
+    #[bw(calc = key_kem.len() as u32)]
+    #[br(temp)]
+    #[cfg_attr(feature = "serde", serde(skip))]
+    dsa_key_len: u32,
+
+    #[br(count = kem_key_len)]
+    pub key_kem: Vec<u8>,
+    #[br(count = kem_key_len)]
+    pub key_dsa: Vec<u8>,
 
     #[bw(calc = user_name.len() as u32)]
     #[br(temp)]
@@ -96,7 +104,7 @@ pub struct PublicFileFormatInternal {
 #[brw(little)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PublicFileFormatExternal {
-    pub internal: PublicFileFormatInternal,
+    pub internal: PublicInternal,
     #[bw(calc = ecc.len() as u32)]
     #[br(temp)]
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -113,3 +121,5 @@ pub struct PublicFileFormatExternal {
     #[br(count = identity_len)]
     pub identity: Vec<u8>,
 }
+
+pub mod certificative {}

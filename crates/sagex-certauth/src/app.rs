@@ -2,12 +2,13 @@
 //!
 //! Verification order in `post_csr` is load-bearing (fail fast, cheapest
 //! first, no state mutations until all checks pass):
-//! permit -> binding(sub==identity) -> CSR/PoP -> replay(jti) -> duplicate
-//! identity -> issue -> persist.
+//! permit -> kind(user-only) -> binding(sub==identity) ->
+//! triple-bind(chatsrv token, optional unless strict) -> CSR/PoP ->
+//! replay(jti) -> duplicate identity -> issue -> persist.
 
 use axum::{Json, Router, extract::{Path, State}, http::StatusCode, response::{IntoResponse, Response}, routing::{get, post}};
 use mongodb::bson::{doc, DateTime};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::{
@@ -25,6 +26,18 @@ pub struct AppState {
     pub ca_dsa_public: Vec<u8>,
     pub signer: Arc<MlDsa65Signer>,
     pub validity_days: u64,
+    /// Pinned BLS (chatsrv) ML-DSA-65 public key + expected kid, for
+    /// verifying chatsrv JOSE tokens locally. No syncing, no callbacks.
+    pub chatsrv_dsa_public: Vec<u8>,
+    pub chatsrv_kid: String,
+    /// Pinned RG (gateway) ML-DSA-65 public key + id, for authenticating
+    /// key-directory lookups. No syncing.
+    pub rg_dsa_public: Vec<u8>,
+    pub rg_id: String,
+    /// Strict mode: CSR requires a chatsrv token (no legacy permit-only path).
+    pub require_chatsrv_token: bool,
+    /// TTL for HTTP-minted user permits (seconds; mirrors PERMIT_TTL_HOURS).
+    pub permit_ttl_secs: u64,
 }
 
 impl AppState {
@@ -143,6 +156,209 @@ struct CsrResponse {
     certificate_pem: String,
 }
 
+#[derive(Serialize)]
+struct PermitResponse {
+    permit: String,
+    sub: String,
+    expires_at: u64,
+}
+
+/// POST /v1/permits — self-service user permits, gated by a chatsrv JOSE
+/// access token. Verifies the token against the pinned BLS key and mints
+/// kind=user with sub=<verified username>; callers can never choose another
+/// subject. Missing/invalid token -> 401. (The offline CLI remains the only
+/// path for server-kind permits.)
+async fn post_permits(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<(StatusCode, Json<PermitResponse>), ApiError> {
+    let token = match bearer_token(&headers) {
+        Some(t) => t,
+        None => {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "chatsrv token required",
+            ))
+        }
+    };
+    let (_sub, username) = sagex_auth::chatsrv_token::verify(
+        token,
+        &state.chatsrv_dsa_public,
+        &state.chatsrv_kid,
+    )
+    .map_err(|e| {
+        eprintln!("WARN: /v1/permits chatsrv token rejected: {e}");
+        ApiError::new(StatusCode::UNAUTHORIZED, "invalid chatsrv token")
+    })?;
+    let permit = permit::mint_for(
+        &state.ca_identity,
+        &state.signer,
+        &username,
+        sagex_auth::PERMIT_KIND_USER,
+        state.permit_ttl_secs,
+    )
+    .map_err(|e| {
+        eprintln!("ERROR: /v1/permits minting failed: {e}");
+        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "issuance failed")
+    })?;
+    println!("issued user permit for {username:?} via chatsrv token");
+    Ok((
+        StatusCode::CREATED,
+        Json(PermitResponse {
+            permit,
+            sub: username,
+            expires_at: sagex_auth::now_secs().saturating_add(state.permit_ttl_secs),
+        }),
+    ))
+}
+
+/// Extract a Bearer token from request headers.
+fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// Key-directory entry: a customer's enrolled public keys + certificate
+/// pointer, served to the authenticated gateway (RG) only.
+#[derive(Serialize)]
+struct KeyEntry {
+    identity: String,
+    key_kem_b64: String,
+    key_dsa_b64: String,
+    cert_serial: i64,
+    fingerprint: String,
+}
+
+#[derive(Serialize)]
+struct KeyError {
+    identity: String,
+    error: String,
+}
+
+/// SHA-256 hex fingerprint of the stored certificate PEM.
+fn cert_fingerprint(pem: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(pem.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+async fn lookup_keys(
+    state: &AppState,
+    identities: &[String],
+) -> Result<(Vec<KeyEntry>, Vec<KeyError>), ApiError> {
+    let mut keys = Vec::new();
+    let mut errors = Vec::new();
+    for identity in identities {
+        let doc = state
+            .certs()
+            .find_one(doc! { "identity": identity })
+            .await
+            .map_err(|e| {
+                eprintln!("ERROR: /v1/keys store lookup failed: {e}");
+                ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "store unavailable")
+            })?;
+        match doc {
+            Some(d) => {
+                let get = |k: &str| {
+                    d.get_str(k)
+                        .map(str::to_string)
+                        .map_err(|_| {
+                            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "bad record")
+                        })
+                };
+                let pem = get("certificate_pem")?;
+                keys.push(KeyEntry {
+                    identity: identity.clone(),
+                    key_kem_b64: get("key_kem_b64")?,
+                    key_dsa_b64: get("key_dsa_b64")?,
+                    cert_serial: d.get_i64("serial").map_err(|_| {
+                        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "bad record")
+                    })?,
+                    fingerprint: cert_fingerprint(&pem),
+                });
+            }
+            None => errors.push(KeyError {
+                identity: identity.clone(),
+                error: "not enrolled".to_string(),
+            }),
+        }
+    }
+    Ok((keys, errors))
+}
+
+/// GET /v1/keys + GET /v1/keys/:identity — customer public-key directory
+/// for the gateway. Authenticated with a short-lived RG JWS (Bearer) minted
+/// with the gateway's key and verified against the pinned RG key/identity.
+/// Unknown identities yield per-entry errors, never whole-request failure.
+async fn keys_auth(state: &AppState, headers: &axum::http::HeaderMap) -> Result<(), ApiError> {
+    let token = match bearer_token(headers) {
+        Some(t) => t,
+        None => {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "RG token required",
+            ))
+        }
+    };
+    sagex_auth::rg_token::verify(token, &state.rg_id, &state.rg_dsa_public).map_err(|e| {
+        eprintln!("WARN: /v1/keys RG token rejected: {e}");
+        ApiError::new(StatusCode::UNAUTHORIZED, "invalid RG token")
+    })?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct KeysQuery {
+    #[serde(default)]
+    identity: String,
+}
+
+async fn get_keys(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<KeysQuery>,
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    keys_auth(&state, &headers).await?;
+    let identities: Vec<String> = q
+        .identity
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .take(32)
+        .map(str::to_string)
+        .collect();
+    if identities.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "identity query required (max 32)",
+        ));
+    }
+    let (keys, errors) = lookup_keys(&state, &identities).await?;
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "keys": keys, "errors": errors })),
+    ))
+}
+
+async fn get_key(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Path(identity): Path<String>,
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    keys_auth(&state, &headers).await?;
+    let (keys, errors) = lookup_keys(&state, std::slice::from_ref(&identity)).await?;
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({ "keys": keys, "errors": errors })),
+    ))
+}
+
 async fn post_csr(
     State(state): State<AppState>,
     Json(req): Json<CsrRequest>,
@@ -153,6 +369,16 @@ async fn post_csr(
             eprintln!("WARN: /v1/csr permit rejected: {e}");
             ApiError::new(StatusCode::UNAUTHORIZED, "invalid permit")
         })?;
+    // 1b. Jurisdiction: enrollment accepts user permits only. A server
+    // permit (e.g. auditor) is cryptographically valid yet useless here —
+    // operator tooling can never enroll user certificates, by construction.
+    if claims.kind != sagex_auth::PERMIT_KIND_USER {
+        eprintln!("WARN: /v1/csr non-user permit kind {:?}", claims.kind);
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "server permits cannot enroll user certificates",
+        ));
+    }
     // 2. Binding: the permit's subject must equal the CSR identity.
     //    Without this, a permit for alice could enroll bob's keys.
     if claims.sub != req.csr.identity {
@@ -161,6 +387,43 @@ async fn post_csr(
             claims.sub, req.csr.identity
         );
         return Err(ApiError::new(StatusCode::FORBIDDEN, "permit does not cover identity"));
+    }
+    // 2b. Triple bind (optional unless strict): a chatsrv JOSE token proves
+    // the requester owns the chatsrv account, and the CSR identity must equal
+    // that username — which must equal the permit subject above.
+    let chatsrv_user: Option<String> = match &req.chatsrv_token {
+        None if state.require_chatsrv_token => {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "chatsrv token required",
+            ));
+        }
+        None => None,
+        Some(token) => {
+            let (_sub, username) = sagex_auth::chatsrv_token::verify(
+                token,
+                &state.chatsrv_dsa_public,
+                &state.chatsrv_kid,
+            )
+            .map_err(|e| {
+                eprintln!("WARN: /v1/csr chatsrv token rejected: {e}");
+                ApiError::new(StatusCode::UNAUTHORIZED, "invalid chatsrv token")
+            })?;
+            if username != req.csr.identity || username != claims.sub {
+                eprintln!(
+                    "WARN: /v1/csr triple-bind mismatch token={username:?} csr={:?} permit={:?}",
+                    req.csr.identity, claims.sub
+                );
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "chatsrv identity does not match",
+                ));
+            }
+            Some(username)
+        }
+    };
+    if let Some(u) = &chatsrv_user {
+        println!("CSR triple-bound to chatsrv user {u:?}");
     }
     // 3. CSR shape + proof-of-possession (client key self-signature).
     let valid = csr::validate(&req.csr).map_err(|e| {
@@ -325,6 +588,9 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/db/ping", get(db_ping))
         .route("/v1/csr", post(post_csr))
+        .route("/v1/permits", post(post_permits))
+        .route("/v1/keys", get(get_keys))
+        .route("/v1/keys/{identity}", get(get_key))
         .route("/v1/certs/{serial}", get(get_cert))
         .route("/v1/certs/{serial}/verify", get(verify_cert))
         .with_state(state)

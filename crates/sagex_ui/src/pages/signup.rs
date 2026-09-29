@@ -82,6 +82,9 @@ impl AuthApp {
                         }
                         this.busy = true;
                         this.notice = None;
+                        // Stash for vault unlock / device enrollment after
+                        // the OTP step (in-memory only, zeroized after use).
+                        this.enroll.set_password(p1.clone());
                         cx.notify();
                         let api = this.api.clone();
                         // signup_name doubles as the username for the API.

@@ -26,6 +26,9 @@ pub struct AppState {
     pub auditor_sub: String,
     /// Serve `GET /logs` at all (from `[logs].enabled`).
     pub logs_enabled: bool,
+    /// SHA-256 fingerprint of this gateway's RG public key (for ops +
+    /// CA pin comparison). Served on `GET /status`.
+    pub rg_fingerprint: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,6 +177,18 @@ async fn post_register(
                     .into_response();
             }
         };
+        // Jurisdiction: intake accepts user permits only. A server permit
+        // (e.g. auditor) is cryptographically valid yet useless here.
+        if claims.kind != sagex_auth::PERMIT_KIND_USER {
+            warn!("gateway non-user permit kind {:?} on intake ({wm})", claims.kind);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!(ErrorBody {
+                    error: "permit kind not accepted for intake".into()
+                })),
+            )
+                .into_response();
+        }
         // Binding: the permit's subject must equal the record's user_id.
         // `user_id` stays a free-form string — plain equality, no charset rules.
         if claims.sub != record.user_id {
@@ -296,7 +311,11 @@ async fn get_status(State(st): State<Arc<AppState>>) -> impl IntoResponse {
     let pending = st.outbox.pending_count().unwrap_or(-1);
     (
         StatusCode::OK,
-        Json(serde_json::json!({ "outbox_pending": pending, "ledger": nodes })),
+        Json(serde_json::json!({
+            "outbox_pending": pending,
+            "ledger": nodes,
+            "rg_fingerprint": st.rg_fingerprint,
+        })),
     )
         .into_response()
 }
@@ -380,6 +399,18 @@ async fn get_logs(
         };
         if claims.sub != st.auditor_sub {
             warn!("gateway /logs permit sub {:?} is not the auditor", claims.sub);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!(ErrorBody {
+                    error: "permit is not an auditor credential".into()
+                })),
+            )
+                .into_response();
+        }
+        // Jurisdiction: auditor access requires a server-kind permit. A user
+        // permit for the same subject name is rejected all the same.
+        if claims.kind != sagex_auth::PERMIT_KIND_SERVER {
+            warn!("gateway /logs non-server permit kind {:?}", claims.kind);
             return (
                 StatusCode::FORBIDDEN,
                 Json(serde_json::json!(ErrorBody {

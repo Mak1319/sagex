@@ -91,6 +91,9 @@ impl AuthApp {
                         }
                         this.busy = true;
                         this.notice = None;
+                        // Stash for vault unlock / device enrollment (in-memory
+                        // only, zeroized after use; never logged or persisted).
+                        this.enroll.set_password(pass.clone());
                         cx.notify();
                         let api = this.api.clone();
                         crate::backend::request(

@@ -21,9 +21,9 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
+    App, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, Subscription, Window, deferred, div,
-    prelude::FluentBuilder,
+    prelude::FluentBuilder, px,
 };
 use gpui_component::{ActiveTheme, input::InputState};
 use tokio::sync::mpsc as tmpsc;
@@ -333,6 +333,38 @@ impl Render for ChatApp {
                             })),
                     )
                     .with_priority(40),
+                )
+            })
+            // Dev preview for the password popup (SAGEX_PREVIEW_MODAL=1).
+            // No backdrop — centered card only. Real triggers land later.
+            .when(std::env::var("SAGEX_PREVIEW_MODAL").is_ok(), |t| {
+                let view = cx.entity();
+                t.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .p(px(24.))
+                        .child(
+                            crate::component::PasswordModal::new(&self.stage_pass)
+                                .on_cancel(cx.listener(|this, _, _, cx| {
+                                    this.notice = Some("Preview: cancel pressed.".to_string());
+                                    cx.notify();
+                                }))
+                                .on_confirm(move |pw: String, _: &mut Window, cx: &mut App| {
+                                    view.update(cx, |this: &mut ChatApp, cx| {
+                                        this.notice = Some(format!(
+                                            "Preview: got {} chars (nothing stored).",
+                                            pw.chars().count()
+                                        ));
+                                        cx.notify();
+                                    });
+                                }),
+                        ),
                 )
             })
     }

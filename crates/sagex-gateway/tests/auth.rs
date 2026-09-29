@@ -35,7 +35,11 @@ impl TestCa {
     }
 
     fn permit(&self, sub: &str, ttl_secs: u64) -> String {
-        sagex_auth::mint(&self.id, sub, ttl_secs, |input| {
+        self.permit_as(sub, sagex_auth::PERMIT_KIND_USER, ttl_secs)
+    }
+
+    fn permit_as(&self, sub: &str, kind: &str, ttl_secs: u64) -> String {
+        sagex_auth::mint(&self.id, sub, kind, ttl_secs, |input| {
             mldsa65::sign(&self.sk, input, b"", &mut OsRng)
                 .map(|s| s.as_bytes().to_vec())
                 .map_err(|e| format!("{e:?}"))
@@ -104,6 +108,8 @@ async fn authenticated_register_matrix() {
 
     let outbox =
         Outbox::open(dir.path().join("gw-auth.db").to_string_lossy().as_ref()).unwrap();
+    let (_, rg_pub) = outbox.load_or_generate_rg_key().unwrap();
+    let rg_fingerprint = sagex_gateway::rg_keys::fingerprint(&rg_pub).unwrap();
     let ledger = Arc::new(LedgerClient::new(ledger_addrs.clone(), 1500, 2000));
     let state = Arc::new(AppState {
         outbox,
@@ -112,6 +118,7 @@ async fn authenticated_register_matrix() {
         auth: ca.verifier(),
         auditor_sub: "ledger-auditor".into(),
         logs_enabled: true,
+        rg_fingerprint,
     });
     let app = sagex_gateway::api::router(state.clone());
     let listener = TcpListener::bind(format!("127.0.0.1:{gw_port}")).await.unwrap();
@@ -230,6 +237,14 @@ async fn authenticated_register_matrix() {
     ))
     .await;
     assert_eq!(r.status(), StatusCode::FORBIDDEN, "sub mismatch");
+
+    // Server-kind permit on intake -> 403 (valid signature, wrong jurisdiction).
+    let r = post(envelope(
+        &ca.permit_as("alice", sagex_auth::PERMIT_KIND_SERVER, 3600),
+        record("wm-auth-kind", "alice"),
+    ))
+    .await;
+    assert_eq!(r.status(), StatusCode::FORBIDDEN, "server kind on intake");
 
     // Duplicate watermark with a FRESH permit -> 200 committed-duplicate,
     // and the fresh permit must NOT be burned (still usable afterwards).

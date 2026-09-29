@@ -43,6 +43,7 @@ pub enum PermitError {
     Expired,
     NotYetValid,
     BadSignature,
+    BadKind(String),
     Crypto(String),
 }
 
@@ -59,6 +60,7 @@ impl fmt::Display for PermitError {
             Self::Expired => write!(f, "permit expired"),
             Self::NotYetValid => write!(f, "permit not yet valid"),
             Self::BadSignature => write!(f, "permit signature invalid"),
+            Self::BadKind(k) => write!(f, "bad permit kind: {k}"),
             Self::Crypto(e) => write!(f, "permit crypto error: {e}"),
         }
     }
@@ -80,6 +82,19 @@ pub struct PermitClaims {
     pub iat: u64,
     pub exp: u64,
     pub jti: String,
+    /// Permit jurisdiction: `"user"` (enrollment + ledger intake) or
+    /// `"server"` (service surfaces like auditor logs). Gates enforce it;
+    /// a server permit can never enroll a user certificate. Required —
+    /// kindless legacy permits fail closed.
+    pub kind: String,
+}
+
+/// The two permit jurisdictions. See [`PermitClaims::kind`].
+pub const PERMIT_KIND_USER: &str = "user";
+pub const PERMIT_KIND_SERVER: &str = "server";
+
+fn valid_kind(kind: &str) -> bool {
+    kind == PERMIT_KIND_USER || kind == PERMIT_KIND_SERVER
 }
 
 pub fn now_secs() -> u64 {
@@ -103,7 +118,8 @@ fn random_jti() -> String {
     b64url(&bytes)
 }
 
-/// Mint a permit for `subject` (a username), valid for `ttl_secs` from now.
+/// Mint a permit for `subject`, valid for `ttl_secs` from now.
+/// `kind` must be [`PERMIT_KIND_USER`] or [`PERMIT_KIND_SERVER`].
 ///
 /// `sign` receives the JWS signing input (`b64u(protected).b64u(payload)`)
 /// and must return raw ML-DSA-65 signature bytes made with the issuing
@@ -111,9 +127,13 @@ fn random_jti() -> String {
 pub fn mint(
     server_identity: &str,
     subject: &str,
+    kind: &str,
     ttl_secs: u64,
     sign: impl FnOnce(&[u8]) -> Result<Vec<u8>, String>,
 ) -> Result<String, PermitError> {
+    if !valid_kind(kind) {
+        return Err(PermitError::BadKind(kind.to_string()));
+    }
     let now = now_secs();
     let protected = Protected {
         alg: PERMIT_ALG.to_string(),
@@ -126,6 +146,7 @@ pub fn mint(
         iat: now,
         exp: now.saturating_add(ttl_secs),
         jti: random_jti(),
+        kind: kind.to_string(),
     };
     let p1 = b64url(serde_json::to_vec(&protected).map_err(PermitError::BadJson)?.as_slice());
     let p2 = b64url(serde_json::to_vec(&claims).map_err(PermitError::BadJson)?.as_slice());
@@ -160,6 +181,11 @@ pub fn verify(
     }
     let claims: PermitClaims =
         serde_json::from_slice(&unb64url(parts[1])?).map_err(PermitError::BadJson)?;
+    // Required field: kindless legacy permits fail closed here as BadJson
+    // ("missing field `kind`"). Unknown values fail as BadKind below.
+    if !valid_kind(&claims.kind) {
+        return Err(PermitError::BadKind(claims.kind));
+    }
     if protected.kid != server_identity || claims.iss != server_identity {
         return Err(PermitError::ForeignServer {
             kid: protected.kid,
@@ -205,8 +231,8 @@ mod tests {
             }
         }
 
-        fn mint(&self, subject: &str, ttl_secs: u64) -> String {
-            mint(&self.identity, subject, ttl_secs, |input| {
+        fn mint(&self, subject: &str, kind: &str, ttl_secs: u64) -> String {
+            mint(&self.identity, subject, kind, ttl_secs, |input| {
                 mldsa65::sign(&self.sk, input, PERMIT_CTX, &mut OsRng)
                     .map(|s| s.as_bytes().to_vec())
                     .map_err(|e| format!("{e:?}"))
@@ -222,7 +248,7 @@ mod tests {
     #[test]
     fn roundtrip_ok() {
         let ca = TestIssuer::new("test-ca");
-        let tok = ca.mint("alice", 3600);
+        let tok = ca.mint("alice", PERMIT_KIND_USER, 3600);
         let claims = ca.verify(&tok).unwrap();
         assert_eq!(claims.sub, "alice");
         assert_eq!(claims.iss, "test-ca");
@@ -232,7 +258,7 @@ mod tests {
     fn foreign_server_rejected() {
         let a = TestIssuer::new("server-a");
         let b = TestIssuer::new("server-b");
-        let tok = a.mint("alice", 3600);
+        let tok = a.mint("alice", PERMIT_KIND_USER, 3600);
         assert!(matches!(
             b.verify(&tok),
             Err(PermitError::ForeignServer { .. })
@@ -247,7 +273,7 @@ mod tests {
     #[test]
     fn expired_rejected() {
         let ca = TestIssuer::new("test-ca");
-        let tok = ca.mint("alice", 0);
+        let tok = ca.mint("alice", PERMIT_KIND_USER, 0);
         std::thread::sleep(std::time::Duration::from_secs(2));
         assert!(matches!(ca.verify(&tok), Err(PermitError::Expired)));
     }
@@ -255,7 +281,7 @@ mod tests {
     #[test]
     fn tampered_payload_rejected() {
         let ca = TestIssuer::new("test-ca");
-        let tok = ca.mint("alice", 3600);
+        let tok = ca.mint("alice", PERMIT_KIND_USER, 3600);
         let mut parts: Vec<String> = tok.split('.').map(|s| s.to_string()).collect();
         let flip = if parts[1].starts_with('A') { "B" } else { "A" };
         parts[1].replace_range(0..1, flip);
@@ -266,7 +292,7 @@ mod tests {
     #[test]
     fn wrong_key_length_rejected() {
         let ca = TestIssuer::new("test-ca");
-        let tok = ca.mint("alice", 3600);
+        let tok = ca.mint("alice", PERMIT_KIND_USER, 3600);
         assert!(matches!(
             verify(&tok, "test-ca", &[0u8; 16]),
             Err(PermitError::Crypto(_))
@@ -276,7 +302,33 @@ mod tests {
     #[test]
     fn mint_rejects_bad_signer_output() {
         let ca = TestIssuer::new("test-ca");
-        let res = mint(&ca.identity, "alice", 60, |_| Ok(vec![0u8; 8]));
+        let res = mint(&ca.identity, "alice", PERMIT_KIND_USER, 60, |_| Ok(vec![0u8; 8]));
         assert!(matches!(res, Err(PermitError::Crypto(_))));
+    }
+
+    #[test]
+    fn kind_matrix() {
+        let ca = TestIssuer::new("test-ca");
+        // Unknown kind refused at mint time.
+        assert!(matches!(
+            mint(&ca.identity, "alice", "admin", 60, |_| Ok(vec![0u8; 8])),
+            Err(PermitError::BadKind(_))
+        ));
+        // Server kind roundtrips with its label intact.
+        let tok = ca.mint("ledger-auditor", PERMIT_KIND_SERVER, 3600);
+        let claims = ca.verify(&tok).unwrap();
+        assert_eq!(claims.kind, PERMIT_KIND_SERVER);
+        assert_eq!(claims.sub, "ledger-auditor");
+        // Kindless legacy token (hand-built without the claim) fails closed.
+        let legacy = {
+            let header = serde_json::json!({"alg": PERMIT_ALG, "typ": PERMIT_TYP, "kid": "test-ca"});
+            let payload = serde_json::json!({
+                "sub": "alice", "iss": "test-ca",
+                "iat": now_secs(), "exp": now_secs() + 3600,
+                "jti": "legacy-jti",
+            });
+            format!("{}.{}.{}", b64url(&serde_json::to_vec(&header).unwrap()), b64url(&serde_json::to_vec(&payload).unwrap()), b64url(&[0u8; 8]))
+        };
+        assert!(ca.verify(&legacy).is_err(), "kindless permits must fail");
     }
 }

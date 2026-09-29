@@ -29,3 +29,6 @@ const-oid = "0.10"
 zeroize = "1.9"
 signature = "3"
 binrw = "0.15.2"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }

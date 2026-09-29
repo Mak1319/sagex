@@ -83,7 +83,8 @@ icons!(
     "lock",
     "lock-open",
     "pause",
-    "square"
+    "square",
+    "key"
 );
 
 pub struct SvgAssets;

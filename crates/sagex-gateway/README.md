@@ -85,6 +85,14 @@ Fresh config template: `./target/debug/sagex-gateway init`.
   be unused (JTI burned in SQLite at intake, before the first submit, so a
   failed submit consumes its permit). Set `[auth].enabled=false` only for
   open demos; bare-record bodies are accepted only in that mode.
+- **Permit jurisdiction**: intake accepts `kind=user` permits only (bound to
+  `record.user_id`); auditor logs (`GET /logs`) accept `kind=server` permits
+  only (bound to `auditor_sub`). A valid permit of the wrong kind is 403
+  everywhere. Permits without a `kind` claim are rejected outright.
+- **Gateway identity**: the RG ML-DSA-65 keypair is generated once into
+  `gateway.db` and stable across restarts; its fingerprint is logged at boot
+  and served on `GET /status`. The CA pins the public half (`RG_PK_B64`) to
+  authenticate key-directory lookups — no syncing, no callbacks.
 - **Idempotent**: resubmitting a watermark returns the stored commit (`duplicate:true`), never a second block — matches ledger dedup.
 - **Durable**: the record hits SQLite before the first submit attempt; gate restarts and ledger outages just delay `DONE`. The worker sweeps `PENDING` rows every `retry_interval_ms`.
 - **Failover**: each submit/query rotates across `ledger.nodes`; any single dead node (f=1) is invisible to callers.

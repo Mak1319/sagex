@@ -10,7 +10,8 @@ use gpui_component::{ActiveTheme, StyledExt as _, input::InputState, input::OtpS
 
 use crate::app::{AuthApp, AuthEvent};
 use crate::backend::{
-    ApiClient, BackendConfig, BackendError, SessionStore, StoredSession, request,
+    ApiClient, BackendConfig, BackendError, CaClient, EnrollState, SessionStore, StoredSession,
+    request,
 };
 use crate::chat::{ChatApp, ChatEvent};
 
@@ -87,6 +88,7 @@ impl AppShell {
                 inputs.reset_confirm,
                 api.clone(),
                 store.clone(),
+                EnrollState::new(crate::backend::Vault::default(), CaClient::new(&cfg.ca_url)),
             )
         });
         cx.subscribe(&auth, |this, _, ev: &AuthEvent, cx| match ev {
@@ -198,6 +200,8 @@ impl AppShell {
                 this.chat = None;
                 this.mode = ShellMode::Auth;
                 this.status = "Signed out.".to_string();
+                // Drop in-memory device secrets (vault files stay for next login).
+                this.auth.update(cx, |a, _| a.enroll.lock());
                 cx.notify();
             }
         })

@@ -28,3 +28,12 @@ futures = "0.3"
 url = "2"
 cpal = "0.16"
 hound = "3"
+# Identity & vault: workspace PQC crypto + sagex key formats (offline-safe,
+# no new crates.io fetches beyond what the workspace already uses).
+sagex-crypto = { path = "../sagex-crypto" }
+sagex-format = { path = "../sagex-format" }
+sagex-auth = { path = "../sagex-auth" }
+rustpq = { version = "0.3.0", features = ["x25519-mlkem768", "mldsa65", "std"] }
+base64 = "0.22"
+binrw = "0.15.2"
+zeroize = "1.9"

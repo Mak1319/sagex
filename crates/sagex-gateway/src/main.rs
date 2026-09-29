@@ -70,6 +70,16 @@ pub async fn run(config_path: &str) -> anyhow::Result<()> {
         tracing::warn!("gateway [auth].enabled=false: /register is OPEN (demo mode)");
     }
     let outbox = Outbox::open(&cfg.outbox.db)?;
+    // This gateway's own identity (RG keypair): generated once into
+    // gateway.db, stable afterwards. The CA pins the public half at startup;
+    // compare the logged fingerprint when pasting it into the CA config.
+    let (_rg_secret_b64, rg_public_b64) = outbox
+        .load_or_generate_rg_key()
+        .map_err(|e| anyhow::anyhow!("RG identity: {e}"))?;
+    let rg_fingerprint = sagex_gateway::rg_keys::fingerprint(&rg_public_b64)
+        .map_err(|e| anyhow::anyhow!("RG identity: {e}"))?;
+    tracing::info!("gateway RG public key fingerprint: {rg_fingerprint}");
+    tracing::info!("gateway RG public_b64 (paste into CA RG_PK_B64): {rg_public_b64}");
     let ledger = Arc::new(LedgerClient::new(
         cfg.ledger.nodes.clone(),
         cfg.ledger.submit_timeout_ms,
@@ -82,6 +92,7 @@ pub async fn run(config_path: &str) -> anyhow::Result<()> {
         auth,
         auditor_sub: cfg.logs.auditor_sub.clone(),
         logs_enabled: cfg.logs.enabled,
+        rg_fingerprint,
     });
     if cfg.logs.enabled {
         tracing::info!(

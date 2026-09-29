@@ -50,6 +50,9 @@ fn default_path() -> PathBuf {
 pub struct SessionStore {
     path: PathBuf,
     pub persist: bool,
+    /// Shared across all clones: once the vault migration seals the session
+    /// encrypted, disk writes stop everywhere (all live clones observe it).
+    disk_writes: std::sync::Arc<std::sync::atomic::AtomicBool>,
     current: Option<StoredSession>,
 }
 
@@ -65,12 +68,30 @@ impl SessionStore {
         Self {
             path,
             persist,
+            disk_writes: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             current,
         }
     }
 
     pub fn get(&self) -> Option<&StoredSession> {
         self.current.as_ref()
+    }
+
+    /// Stop writing the plaintext file on all clones (after vault
+    /// migration). In-memory session handling is unaffected.
+    pub fn set_disk_writes(&self, on: bool) {
+        self.disk_writes
+            .store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn disk_writes_on(&self) -> bool {
+        self.persist && self.disk_writes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Whether a session file currently exists on disk (legacy plaintext
+    /// or otherwise). Used by vault migration; does not read contents.
+    pub fn persisted(&self) -> bool {
+        self.path.is_file()
     }
 
     /// Fresh enough to attempt auto-login (age + refresh expiry).
@@ -87,7 +108,7 @@ impl SessionStore {
 
     pub fn set(&mut self, s: StoredSession) {
         self.current = Some(s.clone());
-        if self.persist {
+        if self.disk_writes_on() {
             self.write_file(&s);
         }
     }
@@ -106,7 +127,7 @@ impl SessionStore {
             s.refresh_expires_at = refresh_exp;
             s.saved_at = now_unix();
             let snap = s.clone();
-            if self.persist {
+            if self.disk_writes_on() {
                 self.write_file(&snap);
             }
         }

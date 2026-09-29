@@ -82,6 +82,14 @@ impl Outbox {
                jti TEXT PRIMARY KEY,
                sub TEXT NOT NULL,
                used_at INTEGER NOT NULL
+             );
+             -- This gateway's own ML-DSA-65 identity (RG keypair). Single row
+             -- id='rg': generated once on first boot, loaded afterwards, so
+             -- the CA pin for this gateway stays stable across restarts.
+             CREATE TABLE IF NOT EXISTS rg_identity(
+               id TEXT PRIMARY KEY,
+               secret_b64 TEXT NOT NULL,
+               public_b64 TEXT NOT NULL
              );",
         )?;
         Ok(())
@@ -240,7 +248,6 @@ impl Outbox {
         )?;
         Ok(())
     }
-
     pub fn list(&self, limit: usize) -> Result<Vec<OutboxEntry>, OutboxError> {
         let c = self.inner.lock().unwrap();
         let mut stmt = c.prepare(
@@ -249,6 +256,29 @@ impl Outbox {
         )?;
         let rows = stmt.query_map(params![limit as i64], row_to_entry)?;
         rows.collect::<Result<_, _>>().map_err(OutboxError::Sqlite)
+    }
+
+    /// Load this gateway's ML-DSA-65 identity, generating and persisting it
+    /// on first boot. Returns `(secret_b64, public_b64)` (STANDARD base64).
+    /// Stability across restarts is what makes the CA pin meaningful.
+    pub fn load_or_generate_rg_key(&self) -> Result<(String, String), OutboxError> {
+        {
+            let c = self.inner.lock().unwrap();
+            let mut stmt = c.prepare("SELECT secret_b64, public_b64 FROM rg_identity WHERE id='rg'")?;
+            let mut rows = stmt.query([])?;
+            if let Some(r) = rows.next()? {
+                let secret: String = r.get(0)?;
+                let public: String = r.get(1)?;
+                return Ok((secret, public));
+            }
+        }
+        let (sk, pk) = crate::rg_keys::generate();
+        let c = self.inner.lock().unwrap();
+        c.execute(
+            "INSERT INTO rg_identity(id,secret_b64,public_b64) VALUES('rg',?1,?2)",
+            params![sk, pk],
+        )?;
+        Ok((sk, pk))
     }
 }
 

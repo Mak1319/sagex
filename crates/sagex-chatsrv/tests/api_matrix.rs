@@ -106,7 +106,7 @@ impl World {
             .await
             .unwrap();
         let hex = res.inserted_id.as_object_id().unwrap().to_hex();
-        let (token, _, _) = self.jose.issue(&hex, "access").unwrap();
+        let (token, _, _) = self.jose.issue(&hex, username, "access").unwrap();
         (hex, token)
     }
 
@@ -207,6 +207,24 @@ impl World {
         assert_eq!(code, 201, "create room: {v}");
         v["id"].as_str().unwrap().to_string()
     }
+}
+
+#[tokio::test]
+async fn token_carries_username() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let w = boot().await;
+    let (hex, tok) = w.user("tokuser").await;
+    // Decode the payload without verifying: the binding must be visible.
+    let parts: Vec<&str> = tok.split('.').collect();
+    assert_eq!(parts.len(), 3);
+    let payload: serde_json::Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
+    assert_eq!(payload["sub"], hex);
+    assert_eq!(payload["username"], "tokuser");
+    assert_eq!(payload["purpose"], "access");
+    // And the token must actually authenticate.
+    let (code, _) = w.get(&tok, "/api/v1/users/me").await;
+    assert_eq!(code, 200);
 }
 
 #[tokio::test]

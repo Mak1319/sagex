@@ -44,6 +44,12 @@ impl std::error::Error for CsrError {}
 pub struct CsrRequest {
     pub permit: String,
     pub csr: CsrBody,
+    /// Optional chatsrv JOSE access token. When present, the CSR identity
+    /// must equal the token username (which must equal the permit subject):
+    /// the triple bind. Absent preserves the legacy permit+PoP path unless
+    /// the server runs strict (`REQUIRE_CHATSRV_TOKEN=true`).
+    #[serde(default)]
+    pub chatsrv_token: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]

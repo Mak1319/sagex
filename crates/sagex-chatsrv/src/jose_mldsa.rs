@@ -38,6 +38,9 @@ struct Header {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // user id (ObjectId hex)
+    /// Username at mint time (point-in-time binding for CA enrollment).
+    /// Required — tokens without it fail closed.
+    pub username: String,
     pub iat: i64,
     pub exp: i64,
     pub jti: String,
@@ -127,13 +130,19 @@ impl JoseSigner {
         }
     }
 
-    /// Issue a compact JWS for `user_id_hex` with the given purpose.
+    /// Issue a compact JWS for `user_id_hex` + `username` with the given purpose.
     /// Returns `(token, jti, exp_unix)`.
-    pub fn issue(&self, user_id_hex: &str, purpose: &str) -> AppResult<(String, String, i64)> {
+    pub fn issue(
+        &self,
+        user_id_hex: &str,
+        username: &str,
+        purpose: &str,
+    ) -> AppResult<(String, String, i64)> {
         let ttl = self.ttl_for(purpose)?;
         let now = chrono::Utc::now().timestamp();
         let claims = Claims {
             sub: user_id_hex.to_string(),
+            username: username.to_string(),
             iat: now,
             exp: now + ttl,
             jti: Uuid::new_v4().to_string(),

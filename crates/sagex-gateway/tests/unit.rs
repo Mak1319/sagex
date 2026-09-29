@@ -144,3 +144,25 @@ fn outbox_failed_is_terminal_for_worker() {
     assert_eq!(o.pending_count().unwrap(), 0);
     assert_eq!(o.list(10).unwrap().len(), 1);
 }
+
+#[test]
+fn rg_key_stable_across_reopens() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("gw.db").to_string_lossy().into_owned();
+    let o1 = Outbox::open(&p).unwrap();
+    let k1 = o1.load_or_generate_rg_key().unwrap();
+    drop(o1);
+    let o2 = Outbox::open(&p).unwrap();
+    let k2 = o2.load_or_generate_rg_key().unwrap();
+    assert_eq!(k1, k2, "RG identity must survive restarts (CA pin stability)");
+}
+
+#[test]
+fn rg_fingerprint_shape_and_rejects_garbage() {
+    assert!(sagex_gateway::rg_keys::fingerprint("!!!not-b64!!!").is_err());
+    let o = Outbox::open_in_memory().unwrap();
+    let (_, pk) = o.load_or_generate_rg_key().unwrap();
+    let fp = sagex_gateway::rg_keys::fingerprint(&pk).unwrap();
+    assert_eq!(fp.len(), 64, "SHA-256 hex");
+    assert!(fp.chars().all(|c| c.is_ascii_hexdigit()));
+}

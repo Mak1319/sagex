@@ -31,11 +31,21 @@ impl TestCa {
     }
 
     fn permit(&self, sub: &str, ttl_secs: u64) -> String {
-        sagex_auth::mint(&self.id, sub, ttl_secs, |input| {
-            mldsa65::sign(&self.sk, input, b"", &mut OsRng)
-                .map(|s| s.as_bytes().to_vec())
-                .map_err(|e| format!("{e:?}"))
-        })
+        self.permit_as(sub, sagex_auth::PERMIT_KIND_SERVER, ttl_secs)
+    }
+
+    fn permit_as(&self, sub: &str, kind: &str, ttl_secs: u64) -> String {
+        sagex_auth::mint(
+            &self.id,
+            sub,
+            kind,
+            ttl_secs,
+            |input| {
+                mldsa65::sign(&self.sk, input, b"", &mut OsRng)
+                    .map(|s| s.as_bytes().to_vec())
+                    .map_err(|e| format!("{e:?}"))
+            },
+        )
         .unwrap()
     }
 
@@ -77,6 +87,8 @@ async fn boot_gateway(
     logs_enabled: bool,
 ) -> (String, reqwest::Client) {
     let outbox = Outbox::open(dir.join(name).to_string_lossy().as_ref()).unwrap();
+    let (_, rg_pub) = outbox.load_or_generate_rg_key().unwrap();
+    let rg_fingerprint = sagex_gateway::rg_keys::fingerprint(&rg_pub).unwrap();
     let ledger = Arc::new(LedgerClient::new(ledger_addrs, 1500, 2000));
     let state = Arc::new(AppState {
         outbox,
@@ -85,6 +97,7 @@ async fn boot_gateway(
         auth,
         auditor_sub: "ledger-auditor".into(),
         logs_enabled,
+        rg_fingerprint,
     });
     let app = sagex_gateway::api::router(state);
     let port = free_port().await;
@@ -141,6 +154,19 @@ async fn auditor_logs_matrix() {
     let r = http
         .get(&logs_url)
         .bearer_auth(ca.permit("someone-else", 3600))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+
+    // 5b. User-kind permit, right subject -> 403 (wrong jurisdiction).
+    let r = http
+        .get(&logs_url)
+        .bearer_auth(ca.permit_as(
+            "ledger-auditor",
+            sagex_auth::PERMIT_KIND_USER,
+            3600,
+        ))
         .send()
         .await
         .unwrap();

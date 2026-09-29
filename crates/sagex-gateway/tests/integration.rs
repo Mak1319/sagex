@@ -80,6 +80,8 @@ async fn gateway_queues_when_down_then_drains_and_proxies() {
     // --- gateway boots FIRST, ledger still down ---
     let outbox =
         Outbox::open(dir.path().join("gw.db").to_string_lossy().as_ref()).unwrap();
+    let (_, rg_pub) = outbox.load_or_generate_rg_key().unwrap();
+    let rg_fingerprint = sagex_gateway::rg_keys::fingerprint(&rg_pub).unwrap();
     let ledger = Arc::new(LedgerClient::new(ledger_addrs.clone(), 1500, 2000));
     let state = Arc::new(AppState {
         outbox,
@@ -90,6 +92,7 @@ async fn gateway_queues_when_down_then_drains_and_proxies() {
         auth: AuthVerifier::disabled(),
         auditor_sub: "ledger-auditor".into(),
         logs_enabled: true,
+        rg_fingerprint,
     });
     let app = sagex_gateway::api::router(state.clone());
     tokio::spawn(sagex_gateway::api::outbox_worker(

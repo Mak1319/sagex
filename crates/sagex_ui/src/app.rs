@@ -11,7 +11,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::backend::{ApiClient, SessionStore, StoredSession};
+use crate::backend::{ApiClient, EnrollState, SessionStore, StoredSession};
 use crate::component::ThemeToggle;
 
 /// Emitted by `AuthApp` when a flow completes with a live session.
@@ -53,6 +53,9 @@ pub struct AuthApp {
     // ---- live backend wiring ----
     pub api: ApiClient,
     pub store: SessionStore,
+    /// Device enrollment (vault + keys + CA). Screens render
+    /// `enroll.status()`; chat entry is not gated on it.
+    pub enroll: EnrollState,
     /// email awaiting OTP + which flow it belongs to (signup|login|reset)
     pub pending_email: String,
     pub pending_purpose: String,
@@ -75,6 +78,7 @@ impl AuthApp {
         reset_confirm: Entity<InputState>,
         api: ApiClient,
         store: SessionStore,
+        enroll: EnrollState,
     ) -> Self {
         Self {
             page: AuthPage::Login,
@@ -94,6 +98,7 @@ impl AuthApp {
             appearance_sub: None,
             api,
             store,
+            enroll,
             pending_email: String::new(),
             pending_purpose: "signup".to_string(),
             busy: false,
@@ -101,6 +106,9 @@ impl AuthApp {
     }
 
     /// Build a persistable session from tokens + profile, save, and emit.
+    /// Also reconciles device enrollment (vault unlock state + legacy
+    /// plaintext migration); enrollment itself runs on demand via
+    /// `EnrollState::run_enrollment` and never blocks sign-in.
     pub(crate) fn signed_in(
         &mut self,
         tokens: crate::backend::Tokens,
@@ -117,6 +125,20 @@ impl AuthApp {
             saved_at: crate::backend::now_unix(),
         };
         self.store.set(sess.clone());
+        // One-way upgrade: seal a legacy plaintext session.json into the
+        // encrypted vault (needs the stashed login password; no-op for
+        // OTP-only logins or when already migrated). Afterwards no clone
+        // writes plaintext anymore.
+        if self.store.persisted() && !self.enroll.vault().has_session() {
+            let store = self.store.clone();
+            if self
+                .enroll
+                .migrate_legacy_session(true, move || store.drop_file(), &sess)
+            {
+                self.store.set_disk_writes(false);
+            }
+        }
+        self.enroll.on_signed_in(&me.username);
         self.busy = false;
         cx.emit(AuthEvent::SignedIn(sess));
         cx.notify();

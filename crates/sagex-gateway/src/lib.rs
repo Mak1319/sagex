@@ -3,6 +3,7 @@ pub mod auth;
 pub mod config;
 pub mod ledger_client;
 pub mod outbox;
+pub mod rg_keys;
 
 pub use auth::AuthVerifier;
 pub use config::GatewayConfig;

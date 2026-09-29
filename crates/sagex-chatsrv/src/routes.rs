@@ -303,9 +303,20 @@ async fn check_otp(state: &AppState, email: &str, purpose: &str, code: &str) -> 
 }
 
 async fn issue_tokens(state: &AppState, user_id: &ObjectId) -> AppResult<Tokens> {
+    // Username is bound into the token at mint time (CA enrollment reads it
+    // back without any extra lookup). Looked up fresh here so renames take
+    // effect on next issue; in-flight tokens keep their old name and fail
+    // closed downstream — the safe direction.
+    let user = state
+        .db
+        .collection::<User>(C_USERS)
+        .find_one(doc! { "_id": user_id }, None)
+        .await?
+        .ok_or_else(|| AppError::Internal("token subject has no user".into()))?;
     let sub = user_id.to_hex();
-    let (access_token, _, access_exp) = state.jose.issue(&sub, "access")?;
-    let (refresh_token, refresh_jti, refresh_exp) = state.jose.issue(&sub, "refresh")?;
+    let (access_token, _, access_exp) = state.jose.issue(&sub, &user.username, "access")?;
+    let (refresh_token, refresh_jti, refresh_exp) =
+        state.jose.issue(&sub, &user.username, "refresh")?;
     state
         .db
         .collection::<Session>(C_SESSIONS)

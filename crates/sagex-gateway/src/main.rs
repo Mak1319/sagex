@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 
-use sagex_gateway::{api, config::GatewayConfig, LedgerClient, Outbox};
+use sagex_gateway::{api, config::GatewayConfig, AuthVerifier, LedgerClient, Outbox};
 
 #[derive(Parser)]
 #[command(name = "sagex-gateway", about = "Register gateway: HTTP intake + outbox + ledger proxy (sole writer)")]
@@ -42,6 +42,17 @@ async fn main() -> anyhow::Result<()> {
 
 pub async fn run(config_path: &str) -> anyhow::Result<()> {
     let cfg = GatewayConfig::from_file(config_path)?;
+    let auth = AuthVerifier::new(
+        cfg.auth.enabled,
+        &cfg.auth.ca_id,
+        &cfg.auth.ca_pubkey_b64,
+    )
+    .map_err(|e| anyhow::anyhow!("invalid [auth] config: {e}"))?;
+    if auth.enabled {
+        tracing::info!("gateway intake permits pinned to CA {:?}", auth.ca_id);
+    } else {
+        tracing::warn!("gateway [auth].enabled=false: /register is OPEN (demo mode)");
+    }
     let outbox = Outbox::open(&cfg.outbox.db)?;
     let ledger = Arc::new(LedgerClient::new(
         cfg.ledger.nodes.clone(),
@@ -52,6 +63,7 @@ pub async fn run(config_path: &str) -> anyhow::Result<()> {
         outbox,
         ledger,
         retry_batch: cfg.outbox.retry_batch,
+        auth,
     });
     tokio::spawn(api::outbox_worker(
         state.clone(),

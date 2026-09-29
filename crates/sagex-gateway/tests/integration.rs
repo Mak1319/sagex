@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::StatusCode;
-use sagex_gateway::{LedgerClient, Outbox};
+use sagex_gateway::{AuthVerifier, LedgerClient, Outbox};
 use sagex_gateway::api::AppState;
 use sagex_ledger::config::{ConsensusSection, NodeConfig, NodeSection, PeerEntry};
 use sagex_ledger::identity::Identity;
@@ -81,7 +81,14 @@ async fn gateway_queues_when_down_then_drains_and_proxies() {
     let outbox =
         Outbox::open(dir.path().join("gw.db").to_string_lossy().as_ref()).unwrap();
     let ledger = Arc::new(LedgerClient::new(ledger_addrs.clone(), 1500, 2000));
-    let state = Arc::new(AppState { outbox, ledger, retry_batch: 16 });
+    let state = Arc::new(AppState {
+        outbox,
+        ledger,
+        retry_batch: 16,
+        // Legacy open-intake coverage: auth deliberately disabled here.
+        // Authenticated intake is covered in tests/auth.rs.
+        auth: AuthVerifier::disabled(),
+    });
     let app = sagex_gateway::api::router(state.clone());
     tokio::spawn(sagex_gateway::api::outbox_worker(
         state.clone(),

@@ -7,6 +7,13 @@ edition = "2024"
 name = "sagex_ui"
 path = "src/main.rs"
 
+# Standalone loading dialog (Android-Studio-style floating panel).
+# Separate binary in the same crate; shares no code with the main app so
+# other workstreams can drive it in parallel over stdin JSON.
+[[bin]]
+name = "sagex_loader"
+path = "src/bin/loader.rs"
+
 [dependencies]
 gpui = "0.2.2"
 gpui-component = "0.5.1"

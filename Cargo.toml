@@ -9,6 +9,7 @@ members = [
     "crates/sagex-format",
     "crates/sagex-appx",
     "crates/sagex-certauth",
+    "crates/sagex-auth",
     "crates/sagex-chatsrv",
     "crates/sagex-ledger",
     "crates/sagex-gateway",

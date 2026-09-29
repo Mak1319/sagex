@@ -52,14 +52,11 @@ impl fmt::Display for CaError {
 
 impl std::error::Error for CaError {}
 
-/// Identity rules shared by the CA name and CSR identities: CN-safe,
-/// bounded, no whitespace or X.500 metacharacters.
+/// Identity rule: the sagex username (user-chosen), also used as the X.509
+/// `CN=` value. Single choke point for the CA name, CSR identities, permit
+/// subjects, and the `issue-permit` CLI. See `sagex_auth::valid_username`.
 pub fn valid_identity(s: &str) -> bool {
-    const MAX: usize = 64;
-    !s.is_empty()
-        && s.len() <= MAX
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-')
+    sagex_auth::valid_username(s)
 }
 
 /// Loaded CA material. The DSA secret stays AES-encapsulated (serialized

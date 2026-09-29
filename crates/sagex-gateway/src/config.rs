@@ -8,6 +8,8 @@ pub struct GatewayConfig {
     pub ledger: LedgerSection,
     #[serde(default)]
     pub outbox: OutboxSection,
+    #[serde(default)]
+    pub auth: AuthSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +40,25 @@ pub struct OutboxSection {
     pub retry_batch: usize,
 }
 
+/// Permit verification for `POST /register` — the same CA-auth strategy as
+/// sagex-certauth (`sagex-auth` crate). Secure by default: with `enabled`
+/// (the default), the gateway refuses intake without a valid server-issued
+/// permit, and refuses to start when key material is missing. Set
+/// `enabled = false` only for open air-gapped demos.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthSection {
+    /// Verify permits on intake. Default true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// CA identity the permits must pin (`kid`/`iss`), e.g. `sagex-ca`.
+    #[serde(default = "default_ca_id")]
+    pub ca_id: String,
+    /// STANDARD base64 of the raw ML-DSA-65 CA public key (same bytes as
+    /// certauth's `.pub` `key_dsa`).
+    #[serde(default)]
+    pub ca_pubkey_b64: String,
+}
+
 impl Default for ServerSection {
     fn default() -> Self {
         Self { listen: default_listen() }
@@ -61,6 +82,15 @@ impl Default for OutboxSection {
         }
     }
 }
+impl Default for AuthSection {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            ca_id: default_ca_id(),
+            ca_pubkey_b64: String::new(),
+        }
+    }
+}
 
 #[allow(clippy::derivable_impls)]
 impl Default for GatewayConfig {
@@ -69,12 +99,20 @@ impl Default for GatewayConfig {
             server: ServerSection::default(),
             ledger: LedgerSection::default(),
             outbox: OutboxSection::default(),
+            auth: AuthSection::default(),
         }
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+fn default_ca_id() -> String {
+    "sagex-ca".into()
+}
+
 fn default_listen() -> String {
-    "127.0.0.1:8080".into()
+    "127.0.0.1:8081".into()
 }
 fn default_nodes() -> Vec<String> {
     vec![
@@ -114,6 +152,14 @@ impl GatewayConfig {
         }
         if self.server.listen.trim().is_empty() {
             anyhow::bail!("server.listen is empty");
+        }
+        if self.auth.enabled
+            && (self.auth.ca_id.trim().is_empty() || self.auth.ca_pubkey_b64.trim().is_empty())
+        {
+            anyhow::bail!(
+                "auth.enabled but [auth].ca_id/ca_pubkey_b64 is not configured \
+                 (paste the CA ML-DSA-65 public key, or set auth.enabled=false for open demos)"
+            );
         }
         Ok(())
     }

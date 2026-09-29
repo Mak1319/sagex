@@ -16,6 +16,7 @@ dotenvy = "0.15"
 mongodb = "3"
 sagex-crypto = { path = "../sagex-crypto" }
 sagex-format = { path = "../sagex-format" }
+sagex-auth = { path = "../sagex-auth" }
 rustpq = { version = "0.3.0", features = ["mldsa65", "std"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.11"

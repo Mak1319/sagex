@@ -73,7 +73,16 @@ impl Outbox {
                created_at INTEGER NOT NULL,
                updated_at INTEGER NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);",
+             CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);
+             -- Single-use permit JTIs (CA-auth strategy, same as sagex-certauth).
+             -- A JTI is burned at intake, before the first submit attempt: a
+             -- failed/rejected submit therefore consumes its permit and the
+             -- operator issues a new one. Never retried, never deleted.
+             CREATE TABLE IF NOT EXISTS used_permits(
+               jti TEXT PRIMARY KEY,
+               sub TEXT NOT NULL,
+               used_at INTEGER NOT NULL
+             );",
         )?;
         Ok(())
     }
@@ -208,6 +217,28 @@ impl Outbox {
             |r| r.get(0),
         )?;
         Ok(n)
+    }
+
+    /// Has this permit JTI already been consumed?
+    pub fn jti_spent(&self, jti: &str) -> Result<bool, OutboxError> {
+        let c = self.inner.lock().unwrap();
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM used_permits WHERE jti=?1",
+            params![jti],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Burn a permit JTI (single-use). Idempotent insert would hide replays,
+    /// so callers must check [`Outbox::jti_spent`] first.
+    pub fn burn_jti(&self, jti: &str, sub: &str) -> Result<(), OutboxError> {
+        let c = self.inner.lock().unwrap();
+        c.execute(
+            "INSERT INTO used_permits(jti,sub,used_at) VALUES(?1,?2,?3)",
+            params![jti, sub, Self::now_ms()],
+        )?;
+        Ok(())
     }
 
     pub fn list(&self, limit: usize) -> Result<Vec<OutboxEntry>, OutboxError> {

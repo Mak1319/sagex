@@ -12,6 +12,7 @@ use tracing::{info, warn};
 
 use sagex_ledger::model::DecryptionRecord;
 
+use crate::auth::AuthVerifier;
 use crate::ledger_client::{ClientError, LedgerClient};
 use crate::outbox::{Outbox, OutboxEntry, STATUS_DONE};
 
@@ -20,6 +21,7 @@ pub struct AppState {
     pub outbox: Outbox,
     pub ledger: Arc<LedgerClient>,
     pub retry_batch: usize,
+    pub auth: AuthVerifier,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,12 +85,35 @@ async fn attempt_submit(
     }
 }
 
-/// POST /register — structural validation only (pass-through: no signature
-/// verification, no key lookup). Durable: persisted before the first attempt.
+/// POST /register — intake for decryption records.
+///
+/// Two modes, selected by `[auth].enabled` (default true):
+/// - enabled: body must be `{permit, record}`. The permit is verified with
+///   the CA-auth strategy (same code as sagex-certauth): signature, `kid`/
+///   `iss` pin, expiry, `sub == record.user_id` binding, single-use JTI.
+///   Failures are 401/403/409 and nothing is stored.
+/// - disabled (explicit opt-in for open demos): body is the bare record, as
+///   before — no identity is established.
+///
+/// In both modes the record itself is structurally validated and flows
+/// through the durable outbox exactly as before.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RegisterBody {
+    /// Authenticated intake: server-issued JOSE permit + record.
+    Envelope { permit: String, record: DecryptionRecord },
+    /// Legacy open intake: bare record (only when auth is disabled).
+    Bare(DecryptionRecord),
+}
+
 async fn post_register(
     State(st): State<Arc<AppState>>,
-    Json(record): Json<DecryptionRecord>,
+    Json(body): Json<RegisterBody>,
 ) -> impl IntoResponse {
+    let (permit, record) = match body {
+        RegisterBody::Envelope { permit, record } => (Some(permit), record),
+        RegisterBody::Bare(record) => (None, record),
+    };
     if let Err(e) = record.validate() {
         return (
             StatusCode::BAD_REQUEST,
@@ -97,8 +122,10 @@ async fn post_register(
             .into_response();
     }
     let wm = record.watermark.clone();
-    match st.outbox.upsert_pending(&record) {
-        Ok((existing, _)) if existing.status == STATUS_DONE => {
+    // Idempotent retry: an already-committed watermark short-circuits here,
+    // before any permit is consumed.
+    match st.outbox.get(&wm) {
+        Ok(Some(existing)) if existing.status == STATUS_DONE => {
             return (
                 StatusCode::OK,
                 Json(serde_json::json!(RegisterResponse {
@@ -120,6 +147,81 @@ async fn post_register(
             )
                 .into_response();
         }
+    }
+    if st.auth.enabled {
+        let permit = match permit {
+            Some(p) => p,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!(ErrorBody { error: "permit required".into() })),
+                )
+                    .into_response();
+            }
+        };
+        let claims = match st.auth.verify_permit(&permit) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("gateway permit rejected for {wm}: {e}");
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!(ErrorBody { error: "invalid permit".into() })),
+                )
+                    .into_response();
+            }
+        };
+        // Binding: the permit's subject must equal the record's user_id.
+        // `user_id` stays a free-form string — plain equality, no charset rules.
+        if claims.sub != record.user_id {
+            warn!(
+                "gateway permit sub {:?} != record user_id {:?} ({wm})",
+                claims.sub, record.user_id
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!(ErrorBody {
+                    error: "permit does not cover user_id".into()
+                })),
+            )
+                .into_response();
+        }
+        match st.outbox.jti_spent(&claims.jti) {
+            Ok(true) => {
+                warn!("gateway replayed permit jti {} ({wm})", claims.jti);
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!(ErrorBody {
+                        error: "permit already used".into()
+                    })),
+                )
+                    .into_response();
+            }
+            Ok(false) => {}
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!(ErrorBody { error: e.to_string() })),
+                )
+                    .into_response();
+            }
+        }
+        // Burn before the first submit attempt (same strictness as
+        // sagex-certauth): a failed/rejected submit consumes its permit.
+        if let Err(e) = st.outbox.burn_jti(&claims.jti, &claims.sub) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!(ErrorBody { error: e.to_string() })),
+            )
+                .into_response();
+        }
+    }
+    // DONE rows short-circuit above; anything left here is fresh or retryable.
+    if let Err(e) = st.outbox.upsert_pending(&record) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!(ErrorBody { error: e.to_string() })),
+        )
+            .into_response();
     }
     let _ = st.outbox.set_inflight(&wm);
     let resp = attempt_submit(&st.outbox, &st.ledger, &record).await;

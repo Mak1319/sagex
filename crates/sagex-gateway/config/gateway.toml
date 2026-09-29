@@ -1,6 +1,6 @@
 # sagex-gateway config (copy to gateway.toml and edit)
 [server]
-listen = "127.0.0.1:8080"
+listen = "127.0.0.1:8081"
 
 [ledger]
 nodes = ["127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003"]
@@ -11,3 +11,14 @@ query_timeout_ms = 5000
 db = "data/gateway.db"
 retry_interval_ms = 2000
 retry_batch = 32
+
+# Intake permits (CA-auth strategy, same code as sagex-certauth).
+# Secure by default: with enabled=true the gateway refuses /register calls
+# without a valid server-issued permit AND refuses to start until ca_id and
+# ca_pubkey_b64 are filled in. Set enabled=false only for open demos.
+[auth]
+enabled = true
+ca_id = "sagex-ca"
+# STANDARD base64 of the raw ML-DSA-65 CA public key, i.e. the `key_dsa`
+# bytes from certauth's CA `.pub` file (see sagex-certauth CaMaterial).
+ca_pubkey_b64 = ""

@@ -6809,6 +6809,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sagex-auth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "rand_core 0.6.4",
+ "rustpq",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sagex-certauth"
 version = "0.1.0"
 dependencies = [
@@ -6822,6 +6833,7 @@ dependencies = [
  "pem-rfc7468",
  "rand_core 0.6.4",
  "rustpq",
+ "sagex-auth",
  "sagex-crypto",
  "sagex-format",
  "serde",
@@ -6900,10 +6912,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.7.9",
+ "base64 0.22.1",
  "chrono",
  "clap",
+ "rand_core 0.6.4",
  "reqwest",
  "rusqlite",
+ "rustpq",
+ "sagex-auth",
  "sagex-ledger",
  "serde",
  "serde_json",

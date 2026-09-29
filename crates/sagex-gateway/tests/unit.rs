@@ -1,5 +1,6 @@
 use sagex_gateway::config::GatewayConfig;
 use sagex_gateway::outbox::{Outbox, STATUS_DONE, STATUS_PENDING};
+use sagex_gateway::AuthVerifier;
 use sagex_ledger::model::DecryptionRecord;
 
 fn sample_record(wm: &str) -> DecryptionRecord {
@@ -16,11 +17,56 @@ fn sample_record(wm: &str) -> DecryptionRecord {
 }
 
 #[test]
-fn config_template_parses_and_validates() {
+fn config_template_parses_but_needs_auth_key() {
+    // Secure by default: the template has auth enabled with an empty key,
+    // so it parses but fails validation until the operator pastes the CA key.
     let tpl = GatewayConfig::template();
     let cfg: GatewayConfig = toml::from_str(&tpl).unwrap();
-    assert!(cfg.validate().is_ok());
+    assert!(cfg.auth.enabled);
+    let err = cfg.validate().unwrap_err().to_string();
+    assert!(err.contains("[auth]"), "unexpected error: {err}");
     assert_eq!(cfg.ledger.nodes.len(), 4);
+}
+
+#[test]
+fn config_validates_with_auth_key() {
+    let mut cfg = GatewayConfig::default();
+    cfg.auth.ca_pubkey_b64 = test_ca_key_b64();
+    assert!(cfg.validate().is_ok());
+}
+
+/// Ephemeral ML-DSA-65 key, STANDARD-base64 encoded like a real `ca_pubkey_b64`.
+fn test_ca_key_b64() -> String {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use rand_core::OsRng;
+    let (pk, _sk) = rustpq::ml_dsa::mldsa65::generate(&mut OsRng);
+    STANDARD.encode(pk.as_bytes())
+}
+
+#[test]
+fn auth_verifier_rejects_bad_config() {
+    assert!(AuthVerifier::new(true, "", &test_ca_key_b64()).is_err());
+    assert!(AuthVerifier::new(true, "sagex-ca", "").is_err());
+    assert!(AuthVerifier::new(true, "sagex-ca", "!!!not-b64!!!").is_err());
+    assert!(AuthVerifier::new(true, "sagex-ca", &base64_short_key()).is_err());
+    assert!(!AuthVerifier::disabled().enabled);
+    assert!(AuthVerifier::new(true, "sagex-ca", &test_ca_key_b64())
+        .unwrap()
+        .enabled);
+}
+
+fn base64_short_key() -> String {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    STANDARD.encode([0u8; 16])
+}
+
+#[test]
+fn jti_burn_is_single_use() {
+    let o = Outbox::open_in_memory().unwrap();
+    assert!(!o.jti_spent("jti-1").unwrap());
+    o.burn_jti("jti-1", "alice").unwrap();
+    assert!(o.jti_spent("jti-1").unwrap());
+    assert!(!o.jti_spent("jti-2").unwrap());
 }
 
 #[test]

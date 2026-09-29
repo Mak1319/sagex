@@ -10,6 +10,8 @@ pub struct GatewayConfig {
     pub outbox: OutboxSection,
     #[serde(default)]
     pub auth: AuthSection,
+    #[serde(default)]
+    pub logs: LogsSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,35 @@ impl Default for AuthSection {
     }
 }
 
+/// Restricted auditor log view (`GET /logs`, Bearer CA permit).
+/// Same CA identity as `[auth]`; the permit's subject must equal
+/// `auditor_sub` (e.g. minted via
+/// `sagex-certauth issue-permit --identity ledger-auditor`).
+/// Unlike intake permits, auditor permits are multi-use (no JTI burn) —
+/// security comes from short TTL + the restricted subject.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsSection {
+    /// Serve GET /logs at all. Default true (still permit-gated).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// In-memory ring capacity for this process. Default 2000.
+    #[serde(default = "default_log_buffer")]
+    pub buffer: usize,
+    /// Required permit subject for log access. Default `ledger-auditor`.
+    #[serde(default = "default_auditor_sub")]
+    pub auditor_sub: String,
+}
+
+impl Default for LogsSection {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            buffer: default_log_buffer(),
+            auditor_sub: default_auditor_sub(),
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for GatewayConfig {
     fn default() -> Self {
@@ -100,12 +131,19 @@ impl Default for GatewayConfig {
             ledger: LedgerSection::default(),
             outbox: OutboxSection::default(),
             auth: AuthSection::default(),
+            logs: LogsSection::default(),
         }
     }
 }
 
 fn default_true() -> bool {
     true
+}
+fn default_log_buffer() -> usize {
+    2000
+}
+fn default_auditor_sub() -> String {
+    "ledger-auditor".into()
 }
 fn default_ca_id() -> String {
     "sagex-ca".into()

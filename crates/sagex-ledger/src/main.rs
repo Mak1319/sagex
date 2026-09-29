@@ -32,9 +32,17 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Ring buffer for the restricted auditor log view (see `GET /logs` on
+    // the gateway / TCP `GetLogs`); stdout logging is unchanged.
+    let log_buffer = sagex_ledger::LogBuffer::init_global(2000).clone();
+    {
+        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::from_default_env())
+            .with(tracing_subscriber::fmt::layer())
+            .with(sagex_ledger::LogLayer::new(log_buffer))
+            .init();
+    }
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Init { id, listen, db } => {

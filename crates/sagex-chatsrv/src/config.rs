@@ -13,6 +13,15 @@ pub struct Config {
     pub mldsa65_sk_b64: Option<String>,
     pub mldsa65_pk_b64: Option<String>,
     pub mldsa65_kid: String,
+    // --- media object storage (MinIO, S3 SigV4 presigned URLs) ---
+    /// Empty (unset) means: no MinIO — media endpoints use an in-memory
+    /// fake (dev only; presigned URLs won't resolve).
+    pub minio_endpoint: String,
+    pub minio_bucket: String,
+    pub minio_access_key: String,
+    pub minio_secret_key: String,
+    pub media_max_bytes: u64,
+    pub presign_ttl_secs: u64,
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -20,6 +29,13 @@ fn env_or(key: &str, default: &str) -> String {
 }
 
 fn env_i64(key: &str, default: i64) -> i64 {
+    env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
     env::var(key)
         .ok()
         .and_then(|v| v.parse().ok())
@@ -48,6 +64,12 @@ impl Config {
             mldsa65_sk_b64: env_opt("MLDSA65_SK_B64"),
             mldsa65_pk_b64: env_opt("MLDSA65_PK_B64"),
             mldsa65_kid: env_or("MLDSA65_KID", "sagex-chatsrv-mldsa65-01"),
+            minio_endpoint: env_or("MINIO_ENDPOINT", ""),
+            minio_bucket: env_or("MINIO_BUCKET", "sagex-media"),
+            minio_access_key: env_or("MINIO_ROOT_USER", ""),
+            minio_secret_key: env_or("MINIO_ROOT_PASSWORD", ""),
+            media_max_bytes: env_u64("MEDIA_MAX_BYTES", 25 * 1024 * 1024),
+            presign_ttl_secs: env_u64("PRESIGN_TTL_SECS", 900),
         }
     }
 }

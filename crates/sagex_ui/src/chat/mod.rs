@@ -1,11 +1,15 @@
+pub mod attach;
+pub mod audio;
 pub mod bubbles;
 pub mod composer;
 pub mod emoji;
+pub mod files;
 pub mod info;
 pub mod list;
 pub mod menus;
 pub mod model;
 pub mod panels;
+pub mod polls;
 pub mod rail;
 #[allow(dead_code)]
 pub mod seed;
@@ -14,9 +18,12 @@ pub mod sync;
 pub mod view;
 
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use gpui::{
-    Context, Entity, IntoElement, ParentElement, Render, ScrollHandle, Styled, Window, div,
+    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
+    StatefulInteractiveElement, Styled, Subscription, Window, deferred, div,
+    prelude::FluentBuilder,
 };
 use gpui_component::{ActiveTheme, input::InputState};
 use tokio::sync::mpsc as tmpsc;
@@ -29,6 +36,19 @@ use model::{Chat, ChatFilter};
 pub enum ChatMenuSub {
     Mute,
     List,
+}
+
+/// Poll creation sheet inputs (window-bound, created in main).
+/// Fixed pool of 8 option rows; the sheet reveals 2..=8 (`poll_n`).
+#[derive(Clone)]
+pub struct PollInputs {
+    pub q: Entity<InputState>,
+    pub opts: Vec<Entity<InputState>>,
+}
+
+impl PollInputs {
+    pub const MAX_OPTS: usize = 8;
+    pub const MIN_OPTS: usize = 2;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -76,9 +96,12 @@ pub struct ChatApp {
     msg_scroll: ScrollHandle,
     list_scroll: ScrollHandle,
     emoji_scroll: ScrollHandle,
+    pill_scroll: ScrollHandle,
+    tray_scroll: ScrollHandle,
     next_id: usize,
     next_msg: usize,
     pub theme_mode: crate::component::ThemeChoice,
+    pub(crate) appearance_sub: Option<Subscription>,
     // ---- live backend ----
     pub api: ApiClient,
     pub store: SessionStore,
@@ -105,6 +128,25 @@ pub struct ChatApp {
     pub profile_name: Entity<InputState>,
     pub user_results: Vec<UserDto>,
     pub new_members: Vec<String>,
+    // ---- attachments (offline) ----
+    pub staged: Vec<files::StagedFile>,
+    pub stage_seq: usize,
+    pub stage_caption: Entity<InputState>,
+    pub stage_pass: Entity<InputState>,
+    pub stage_locked: bool,
+    pub drag_hover: bool,
+    pub hover_gen: u64,
+    pub preview: Option<attach::PreviewSel>,
+    pub show_poll: bool,
+    pub poll: PollInputs,
+    pub poll_n: usize,
+    // ---- voice notes ----
+    pub audio_ui: audio::AudioUi,
+    pub recorder: Option<audio::Recorder>,
+    pub clip: Option<audio::PreviewClip>,
+    pub playing: Option<audio::PlayHandle>,
+    pub mic_down_at: Option<Instant>,
+    pub audio_gen: u64,
 }
 
 impl ChatApp {
@@ -116,6 +158,9 @@ impl ChatApp {
         user_search: Entity<InputState>,
         room_name: Entity<InputState>,
         profile_name: Entity<InputState>,
+        stage_caption: Entity<InputState>,
+        stage_pass: Entity<InputState>,
+        poll: PollInputs,
         api: ApiClient,
         store: SessionStore,
     ) -> Self {
@@ -143,9 +188,12 @@ impl ChatApp {
             msg_scroll: ScrollHandle::new(),
             list_scroll: ScrollHandle::new(),
             emoji_scroll: ScrollHandle::new(),
+            pill_scroll: ScrollHandle::new(),
+            tray_scroll: ScrollHandle::new(),
             next_id: 1,
             next_msg: 1,
             theme_mode: crate::component::ThemeChoice::System,
+            appearance_sub: None,
             chats: vec![],
             api,
             store,
@@ -167,7 +215,62 @@ impl ChatApp {
             profile_name,
             user_results: vec![],
             new_members: vec![],
+            staged: vec![],
+            stage_seq: 1,
+            stage_caption,
+            stage_pass,
+            stage_locked: false,
+            drag_hover: false,
+            hover_gen: 0,
+            preview: None,
+            show_poll: false,
+            poll,
+            poll_n: PollInputs::MIN_OPTS,
+            audio_ui: audio::AudioUi::Idle,
+            recorder: None,
+            clip: None,
+            playing: None,
+            mic_down_at: None,
+            audio_gen: 0,
         }
+    }
+
+    /// Demo entry: seed chats render instantly so the UI can be iterated
+    /// without a session; a persisted session upgrades to live in `boot_demo`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_demo(
+        search: Entity<InputState>,
+        composer: Entity<InputState>,
+        emoji_search: Entity<InputState>,
+        user_search: Entity<InputState>,
+        room_name: Entity<InputState>,
+        profile_name: Entity<InputState>,
+        stage_caption: Entity<InputState>,
+        stage_pass: Entity<InputState>,
+        poll: PollInputs,
+        api: ApiClient,
+        store: SessionStore,
+    ) -> Self {
+        let mut this = Self::new(
+            search,
+            composer,
+            emoji_search,
+            user_search,
+            room_name,
+            profile_name,
+            stage_caption,
+            stage_pass,
+            poll,
+            api,
+            store,
+        );
+        this.chats = seed::seed_chats();
+        this.active_id = 1;
+        this.next_id = 100;
+        this.next_msg = 1000;
+        this.loading = false;
+        this.conn = ConnStatus::Offline;
+        this
     }
 
     pub fn my_id(&self) -> String {
@@ -211,5 +314,26 @@ impl Render for ChatApp {
             .child(self.render_rail(window, cx))
             .child(self.render_list(window, cx))
             .child(self.render_main(window, cx))
+            // Window-level click-away for the side-panel row menu: the old
+            // in-column overlay never saw clicks in the main column/rail,
+            // so the menu stayed open. Painted below the menu card (40<100).
+            .when(self.row_menu.is_some(), |t| {
+                t.child(
+                    deferred(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .size_full()
+                            .id("row-menu-dismiss-root")
+                            .cursor_default()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.close_menus();
+                                cx.notify();
+                            })),
+                    )
+                    .with_priority(40),
+                )
+            })
     }
 }

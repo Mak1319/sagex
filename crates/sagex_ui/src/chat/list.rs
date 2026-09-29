@@ -1,6 +1,6 @@
 use gpui::{
     Context, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    StatefulInteractiveElement, Styled, Window, deferred, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable, StyledExt as _,
@@ -24,7 +24,10 @@ impl ChatApp {
         f: ChatFilter,
     ) -> impl IntoElement {
         let active = self.filter == f;
-        let mut b = Button::new(id).small().label(label.to_string());
+        let mut b = Button::new(id)
+            .small()
+            .label(label.to_string())
+            .flex_shrink_0();
         b = if active { b.primary() } else { b.outline() };
         b.on_click(cx.listener(move |this, _, _, cx| {
             this.filter = f;
@@ -189,11 +192,14 @@ impl ChatApp {
             )
             .child(
                 div()
+                    .id("filter-pills-scroll")
                     .flex()
                     .flex_row()
                     .gap_2()
                     .px_4()
                     .pb_2()
+                    .overflow_x_scroll()
+                    .track_scroll(&self.pill_scroll)
                     .child(self.pill(cx, "f-all", "All", ChatFilter::All))
                     .child(self.pill(cx, "f-unread", "Unread", ChatFilter::Unread))
                     .child(self.pill(cx, "f-fav", "Favourites", ChatFilter::Favourites))
@@ -227,21 +233,10 @@ impl ChatApp {
                         c.a = 0.3;
                         c
                     }))
-                    // row context menu + click-away overlay
+                    // row context menu card, deferred above the
+                    // window-level dismiss overlay (100 > 40 in mod.rs)
                     .when_some(self.row_menu, |t, (cid, y)| {
-                        t.child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .left_0()
-                                .size_full()
-                                .id("row-menu-dismiss")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.close_menus();
-                                    cx.notify();
-                                })),
-                        )
-                        .child(self.render_row_menu(cx, cid, y))
+                        t.child(deferred(self.render_row_menu(cx, cid, y)).with_priority(100))
                     }),
             )
     }

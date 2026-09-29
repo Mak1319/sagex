@@ -368,6 +368,19 @@ impl Node {
                     });
                 }
             }
+            Message::GetLogs { limit, level } => {
+                // Auditor tail: served straight from the ring buffer, no
+                // consensus involved. Restriction is enforced one hop up, at
+                // the gateway's `GET /logs` (Bearer CA permit).
+                if let Some(reply) = reply {
+                    let entries = crate::logbuf::LogBuffer::global()
+                        .snapshot(level.as_deref(), limit as usize);
+                    let _ = reply.send(ResponseEnvelope {
+                        req_id,
+                        resp: Response::LogsResult { entries, error: None },
+                    });
+                }
+            }
         }
     }
 

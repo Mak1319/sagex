@@ -3,10 +3,13 @@
 //! JSON protocol — client -> server:
 //! ```json
 //! {"type":"join","room_id":"..."} | {"type":"leave","room_id":"..."}
-//! | {"type":"message","room_id":"...","body":"hello"}
+//! | {"type":"message","room_id":"...","body":"hello"} (text default;
+//!   rich posts add "kind", "metadata", "reply_to" — same rules as REST)
 //! | {"type":"typing","room_id":"..."} | {"type":"ping"}
 //! ```
-//! server -> client: `{"type":"welcome"|"ack"|"message"|"presence"|"typing"|"error"|"pong", ...}`
+//! server -> client: `{"type":"welcome"|"ack"|"message"|"message.edited"|
+//! "message.deleted"|"poll.vote"|"poll.result"|"reaction"|"pin.updated"|
+//! "delivered"|"read"|"presence"|"typing"|"error"|"pong", ...}`
 
 use std::{
     collections::HashSet,
@@ -43,6 +46,11 @@ struct ClientMsg {
     kind: String,
     room_id: Option<String>,
     body: Option<String>,
+    /// Rich-post fields (same rules as REST `POST .../messages`).
+    #[serde(rename = "kind")]
+    msg_kind: Option<String>,
+    metadata: Option<serde_json::Value>,
+    reply_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +69,13 @@ struct ServerMsg {
     user_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    /// Rich message fields (present on `message` events).
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    msg_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to: Option<String>,
 }
 
 pub struct ChatHub {
@@ -213,6 +228,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_hex: String) {
             message_id: None,
             user_id: Some(user_hex.clone()),
             detail: Some("connected to sagex-chatsrv".into()),
+            msg_kind: None,
+            metadata: None,
+            reply_to: None,
         },
     );
 
@@ -254,6 +272,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, user_hex: String) {
                         message_id: None,
                         user_id: None,
                         detail: Some("invalid JSON message".into()),
+                        msg_kind: None,
+                        metadata: None,
+                        reply_to: None,
                     },
                 );
                 continue;
@@ -282,6 +303,9 @@ async fn handle_client_msg(
         message_id: None,
         user_id: None,
         detail: Some(detail.into()),
+        msg_kind: None,
+        metadata: None,
+        reply_to: None,
     };
     let err = |detail: &str| ServerMsg {
         kind: "error".into(),
@@ -291,6 +315,9 @@ async fn handle_client_msg(
         message_id: None,
         user_id: None,
         detail: Some(detail.into()),
+        msg_kind: None,
+        metadata: None,
+        reply_to: None,
     };
     match cmsg.kind.as_str() {
         "ping" => state.hub.send_to(
@@ -303,6 +330,9 @@ async fn handle_client_msg(
                 message_id: None,
                 user_id: None,
                 detail: None,
+                msg_kind: None,
+                metadata: None,
+                reply_to: None,
             },
         ),
         "join" => {
@@ -327,6 +357,9 @@ async fn handle_client_msg(
                     message_id: None,
                     user_id: None,
                     detail: Some(format!("online: {}", online.join(","))),
+                    msg_kind: None,
+                    metadata: None,
+                    reply_to: None,
                 },
                 None,
             );
@@ -358,20 +391,18 @@ async fn handle_client_msg(
                     message_id: None,
                     user_id: None,
                     detail: None,
+                    msg_kind: None,
+                    metadata: None,
+                    reply_to: None,
                 },
                 Some(sid),
             );
         }
         "message" => {
-            let (Some(room_hex), Some(body)) = (cmsg.room_id.clone(), cmsg.body) else {
+            let (Some(room_hex), Some(body_raw)) = (cmsg.room_id.clone(), cmsg.body) else {
                 state.hub.send_to(sid, &err("room_id and body required"));
                 return;
             };
-            let body = body.trim().to_string();
-            if body.is_empty() || body.len() > 4000 {
-                state.hub.send_to(sid, &err("body must be 1..4000 chars"));
-                return;
-            }
             let Ok(room_id) = ObjectId::parse_str(&room_hex) else {
                 state.hub.send_to(sid, &err("bad room_id"));
                 return;
@@ -380,12 +411,33 @@ async fn handle_client_msg(
                 state.hub.send_to(sid, &err("not a room member"));
                 return;
             }
+            let (body, kind, metadata, reply_to) = match crate::common::resolve_post(
+                state,
+                room_id,
+                &body_raw,
+                cmsg.msg_kind,
+                cmsg.metadata,
+                cmsg.reply_to,
+            )
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    state.hub.send_to(sid, &err(&e.to_string()));
+                    return;
+                }
+            };
             let now = DateTime::now();
             let msg = Message {
                 id: None,
                 room_id,
                 sender_id: *user_id,
                 body: body.clone(),
+                kind: kind.clone(),
+                metadata: metadata.clone(),
+                reply_to,
+                edited_at: None,
+                deleted: false,
                 created_at: now,
             };
             let coll = state.db.collection::<Message>(C_MESSAGES);
@@ -402,6 +454,9 @@ async fn handle_client_msg(
                             message_id: mid,
                             user_id: None,
                             detail: None,
+                            msg_kind: Some(kind),
+                            metadata,
+                            reply_to: reply_to.map(|o| o.to_hex()),
                         },
                         None,
                     );

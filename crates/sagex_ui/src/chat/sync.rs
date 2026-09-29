@@ -24,6 +24,45 @@ type AfterAuth = Box<dyn FnOnce(&mut ChatApp, &mut Context<ChatApp>) + 'static>;
 
 impl ChatApp {
     // ---------- boot ----------
+    /// Demo boot: keep seeds on screen, silently upgrade to live data when
+    /// a persisted session (≤ `max_age_days`) still refreshes.
+    pub fn boot_demo(&mut self, max_age_days: i64, cx: &mut Context<Self>) {
+        let Some(sess) = self.store.usable(max_age_days) else {
+            return;
+        };
+        let api = self.api.clone();
+        let rt = sess.refresh_token.clone();
+        request(
+            cx,
+            async move {
+                let tokens = api.refresh(&rt).await?;
+                let me = api.me(&tokens.access_token).await?;
+                Ok::<_, BackendError>((tokens, me))
+            },
+            |this, res: ApiResult<(crate::backend::Tokens, crate::backend::UserDto)>, cx| {
+                match res {
+                    Ok((tokens, me)) => {
+                        let sess = StoredSession {
+                            access_token: tokens.access_token.clone(),
+                            access_expires_at: tokens.access_expires_at,
+                            refresh_token: tokens.refresh_token.clone(),
+                            refresh_expires_at: tokens.refresh_expires_at,
+                            user_id: me.id.clone(),
+                            email: me.email.clone(),
+                            saved_at: crate::backend::now_unix(),
+                        };
+                        this.store.set(sess.clone());
+                        this.boot(sess, cx);
+                    }
+                    Err(_) => {
+                        // stay on demo seeds; conn dot already Offline
+                        cx.notify();
+                    }
+                }
+            },
+        )
+        .detach();
+    }
     /// Called once by the shell with a live session: loads profile, users,
     /// rooms, then connects realtime and pulls history for the first room.
     pub fn boot(&mut self, sess: StoredSession, cx: &mut Context<Self>) {
@@ -377,6 +416,7 @@ impl ChatApp {
                 },
                 deleted: false,
                 server_id: Some(m.id.clone()),
+                attachment: None,
             });
             c.last_time = short_time(&m.created_at);
             if local != self.active_id {
@@ -412,6 +452,7 @@ impl ChatApp {
                 ticks: MessageStatus::Sent,
                 deleted: false,
                 server_id: None,
+                attachment: None,
             });
             c.last_time = "now".to_string();
         }

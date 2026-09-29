@@ -157,8 +157,6 @@ impl ChatApp {
                             .py_2()
                             .children(
                                 [
-                                    ("Voice", "icons/phone.svg"),
-                                    ("Video", "icons/video.svg"),
                                     ("Add", "icons/user-plus.svg"),
                                     ("Search", "icons/search.svg"),
                                 ]

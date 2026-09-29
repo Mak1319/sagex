@@ -1,8 +1,8 @@
 //! Message composer: attach + emoji + borderless input + mic/send pill.
 
 use gpui::{
-    App, ClickEvent, Entity, IntoElement, ParentElement, RenderOnce, StyleRefinement, Styled,
-    Window, div,
+    App, ClickEvent, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    RenderOnce, StyleRefinement, Styled, Window, div, px,
 };
 use gpui_component::{
     Icon,
@@ -11,6 +11,9 @@ use gpui_component::{
     input::InputState,
 };
 use std::rc::Rc;
+
+/// Press-and-hold mic handler pair (WhatsApp-style recording).
+pub type MicHoldHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// Controlled composer. Parent owns the input entity + send logic.
 #[derive(IntoElement)]
@@ -21,6 +24,8 @@ pub struct MessageComposer {
     on_attach: Option<super::ClickHandler>,
     on_emoji: Option<super::ClickHandler>,
     on_send: Option<super::ClickHandler>,
+    on_mic_down: Option<MicHoldHandler>,
+    on_mic_up: Option<MicHoldHandler>,
 }
 
 impl MessageComposer {
@@ -32,6 +37,8 @@ impl MessageComposer {
             on_attach: None,
             on_emoji: None,
             on_send: None,
+            on_mic_down: None,
+            on_mic_up: None,
         }
     }
 
@@ -56,6 +63,19 @@ impl MessageComposer {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_send = Some(Rc::new(handler));
+        self
+    }
+
+    /// Press handler for the mic pill (empty composer). Pair with
+    /// [`Self::on_mic_up`]; a quick tap resolves to locked recording.
+    pub fn on_mic_down(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_mic_down = Some(Rc::new(handler));
+        self
+    }
+
+    /// Release handler for the mic pill (empty composer).
+    pub fn on_mic_up(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_mic_up = Some(Rc::new(handler));
         self
     }
 }
@@ -89,6 +109,35 @@ impl RenderOnce for MessageComposer {
         if let Some(handler) = self.on_send {
             send = send.on_click(move |evt, window, cx: &mut App| (handler)(evt, window, cx));
         }
+        // Hold-to-record mic: when the composer is empty and hold handlers
+        // are wired, the mic pill tracks press/release instead of clicking.
+        let send = if self.empty && (self.on_mic_down.is_some() || self.on_mic_up.is_some()) {
+            let mut mic = div()
+                .id("composer-mic")
+                .size(px(36.))
+                .flex_shrink_0()
+                .rounded_full()
+                .bg(theme.primary)
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .text_color(theme.primary_foreground)
+                .child(Icon::empty().path("icons/mic.svg"));
+            if let Some(down) = self.on_mic_down {
+                mic = mic.on_mouse_down(MouseButton::Left, move |_, window, cx: &mut App| {
+                    (down)(window, cx)
+                });
+            }
+            if let Some(up) = self.on_mic_up {
+                mic = mic.on_mouse_up(MouseButton::Left, move |_, window, cx: &mut App| {
+                    (up)(window, cx)
+                });
+            }
+            mic.into_any_element()
+        } else {
+            send.into_any_element()
+        };
         div()
             .flex()
             .flex_row()

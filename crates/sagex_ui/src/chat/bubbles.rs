@@ -13,6 +13,7 @@ use crate::component::{
     Avatar, BubbleContent, ChatBubble, LinkCard, OUTGOING_DARK, OUTGOING_LIGHT, ReactionChips,
     Tail, Tick,
 };
+use std::rc::Rc;
 
 impl ChatApp {
     fn bubble_content(m: &Message) -> BubbleContent {
@@ -42,9 +43,18 @@ impl ChatApp {
                 color: sender_color(name),
                 initials: sender_initials(name),
             },
-            MessageKind::Poll { question, options } => BubbleContent::Poll {
+            MessageKind::Poll {
+                question,
+                options,
+                votes,
+                my_vote,
+            } => BubbleContent::Poll {
                 question: question.clone(),
                 options: options.clone(),
+                votes: votes.clone(),
+                my_vote: *my_vote,
+                tag: 0,
+                on_vote: None,
             },
             MessageKind::Event { title, when } => BubbleContent::Event {
                 title: title.clone(),
@@ -183,7 +193,74 @@ impl ChatApp {
             MessageStatus::Delivered => Tick::Delivered,
             MessageStatus::Read => Tick::Read,
         });
-        let mut bubble = ChatBubble::new(m.mine, Self::bubble_content(m), m.time.clone())
+        // Real attachments bypass the placeholder kinds: full File bubble.
+        let content = match &m.attachment {
+            Some(att) => {
+                let view = cx.entity();
+                let open_path = att.path.clone();
+                let prev = super::attach::PreviewSel {
+                    path: att.path.clone(),
+                    name: att.name.clone(),
+                };
+                let is_image = att.kind == super::files::FileKind::Image;
+                BubbleContent::File {
+                    tag: mid,
+                    thumb: is_image.then(|| att.path.to_string_lossy().into_owned()),
+                    name: att.name.clone(),
+                    size: super::files::fmt_size(att.size),
+                    icon: att.kind.icon().to_string(),
+                    locked: att.locked,
+                    on_open: Some(Rc::new(
+                        move |_: &gpui::ClickEvent, _: &mut gpui::Window, _: &mut gpui::App| {
+                            ChatApp::open_path(&open_path);
+                        },
+                    )),
+                    on_preview: is_image.then(|| {
+                        let handler: crate::component::FileHandler = Rc::new(
+                            move |_: &gpui::ClickEvent,
+                                  _: &mut gpui::Window,
+                                  cx: &mut gpui::App| {
+                                view.update(cx, |this: &mut ChatApp, cx| {
+                                    this.preview = Some(prev.clone());
+                                    cx.notify();
+                                });
+                            },
+                        );
+                        handler
+                    }),
+                }
+            }
+            None => match &m.kind {
+                super::model::MessageKind::Poll {
+                    question,
+                    options,
+                    votes,
+                    my_vote,
+                } => {
+                    let view = cx.entity();
+                    let handler: crate::component::VoteHandler = Rc::new(
+                        move |opt: usize,
+                              _: &gpui::ClickEvent,
+                              _: &mut gpui::Window,
+                              cx: &mut gpui::App| {
+                            view.update(cx, |this: &mut ChatApp, cx| {
+                                this.cast_vote(mid, opt, cx);
+                            });
+                        },
+                    );
+                    BubbleContent::Poll {
+                        question: question.clone(),
+                        options: options.clone(),
+                        votes: votes.clone(),
+                        my_vote: *my_vote,
+                        tag: mid,
+                        on_vote: Some(handler),
+                    }
+                }
+                _ => Self::bubble_content(m),
+            },
+        };
+        let mut bubble = ChatBubble::new(m.mine, content, m.time.clone())
             .pinned(pinned)
             .ticks(ticks)
             .menu_tag(mid);

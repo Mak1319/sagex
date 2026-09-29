@@ -63,6 +63,7 @@ Canonical bytes bound by `signature` and by the block hash:
 {"req_id":3,"from":null,"type":"QueryUser","user_id":"alice"}
 {"req_id":4,"from":null,"type":"GetBlock","index":7}
 {"req_id":5,"from":null,"type":"Status"}
+{"req_id":6,"from":null,"type":"GetLogs","limit":200,"level":"WARN"}
 ```
 
 Responses:
@@ -76,6 +77,12 @@ Responses:
 ```
 
 `blocks:[]` + `error:"not found"` when nothing matches.
+
+`GetLogs` is answered directly from the node's in-memory auditor ring
+buffer (no consensus; at most 500 entries, chronological tail, optional
+severity floor). It exists so the gateway can fan node logs out behind
+its restricted `GET /logs`; restriction is enforced at the gateway, not
+on this raw TCP query (air-gapped loopback assumption, same as `Status`).
 
 ## Gate responsibilities
 

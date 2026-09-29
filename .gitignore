@@ -3,7 +3,7 @@
 /realfiles
 /test-*
 # Screenshot_* (desktop captures, any directory)
-Screenshot_*.png
+# Screenshot_*.png
 /*test*
 molecular-svg-nextjs
 .cursor
@@ -22,3 +22,5 @@ crates/sagex-ledger/config/nodes/node0.toml
 crates/sagex-ledger/config/nodes/node1.toml
 crates/sagex-ledger/config/nodes/node2.toml
 crates/sagex-ledger/config/nodes/node3.toml
+# MinIO object bits (recreated by the minio service; bucket bootstrapped on boot)
+minio-data/

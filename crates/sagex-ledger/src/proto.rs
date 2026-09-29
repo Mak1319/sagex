@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::logbuf::LogEntry;
 use crate::model::{Block, DecryptionRecord};
 
 /// JSON-lines wire protocol. One JSON object per line over TCP.
@@ -53,6 +54,14 @@ pub enum Message {
     GetBlock { index: u64 },
     #[serde(rename = "Status")]
     Status {},
+    /// Auditor log tail served from the node's in-memory ring buffer.
+    /// Answered directly (no consensus); the gateway fans this out.
+    #[serde(rename = "GetLogs")]
+    GetLogs {
+        limit: u64,
+        #[serde(default)]
+        level: Option<String>,
+    },
     /// Peer handshake: first line on a peer link in both directions.
     #[serde(rename = "Hello")]
     Hello { node_id: u64 },
@@ -80,6 +89,11 @@ pub enum Response {
         tip_hash: String,
         view: u64,
         seq: u64,
+    },
+    #[serde(rename = "LogsResult")]
+    LogsResult {
+        entries: Vec<LogEntry>,
+        error: Option<String>,
     },
     #[serde(rename = "Error")]
     Error { error: String },

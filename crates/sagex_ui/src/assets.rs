@@ -79,7 +79,11 @@ icons!(
     "link",
     "check-check",
     "sun-moon",
-    "archive"
+    "archive",
+    "lock",
+    "lock-open",
+    "pause",
+    "square"
 );
 
 pub struct SvgAssets;

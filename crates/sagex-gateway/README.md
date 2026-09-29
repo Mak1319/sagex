@@ -56,6 +56,24 @@ curl -s 127.0.0.1:8081/outbox      # operator view of the queue
 curl -s 127.0.0.1:8081/health
 ```
 
+Restricted auditor logs (CA-issued credential, Bearer):
+
+```bash
+sagex-certauth issue-permit --identity ledger-auditor --ttl-hours 720
+curl -s 127.0.0.1:8081/logs -H "Authorization: Bearer <permit>"
+curl -s '127.0.0.1:8081/logs?level=WARN&limit=100' -H "Authorization: Bearer <permit>"
+curl -s '127.0.0.1:8081/logs?source=gateway' -H "Authorization: Bearer <permit>"
+```
+
+`GET /logs` returns this process's ring buffer plus a per-node tail fanned
+out over the ledger TCP `GetLogs` query (`?source=` selects `gateway`, one
+node addr, or everything; `?level=` floors severity; `?limit=` caps at 500).
+Access needs a permit whose subject equals `[logs].auditor_sub`
+(default `ledger-auditor`) — same `sagex-auth` verification as intake, but
+multi-use (no JTI burn); missing/invalid → 401, wrong subject → 403,
+`[logs].enabled=false` → 404. The `sagex-ledger-ui` desktop app is the
+intended viewer.
+
 Fresh config template: `./target/debug/sagex-gateway init`.
 
 ## Semantics

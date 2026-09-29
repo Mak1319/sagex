@@ -22,21 +22,13 @@ use crate::{
     ws::ws_handler,
 };
 
-// ---------- helpers ----------
+// ---------- helpers (moved to common.rs; re-exported for sibling modules) ----------
+pub(crate) use crate::common::{
+    get_room, id_of, must_be_member, parse_id, resolve_post, ts,
+};
+
 fn now_plus(secs: i64) -> DateTime {
     DateTime::from_millis(DateTime::now().timestamp_millis() + secs * 1000)
-}
-
-fn ts(dt: &DateTime) -> String {
-    dt.try_to_rfc3339_string().unwrap_or_default()
-}
-
-fn parse_id(hex: &str) -> AppResult<ObjectId> {
-    ObjectId::parse_str(hex).map_err(|_| AppError::BadRequest("bad id".into()))
-}
-
-fn id_of(o: Option<ObjectId>, what: &str) -> AppResult<ObjectId> {
-    o.ok_or_else(|| AppError::Internal(format!("{what} missing _id")))
 }
 
 // ---------- DTOs ----------
@@ -46,6 +38,8 @@ struct UserDto {
     email: String,
     username: String,
     display_name: Option<String>,
+    status: Option<String>,
+    avatar_key: Option<String>,
     is_verified: bool,
     created_at: String,
 }
@@ -57,6 +51,8 @@ impl UserDto {
             email: u.email.clone(),
             username: u.username.clone(),
             display_name: u.display_name.clone(),
+            status: u.status.clone(),
+            avatar_key: u.avatar_key.clone(),
             is_verified: u.is_verified,
             created_at: ts(&u.created_at),
         })
@@ -96,21 +92,43 @@ impl RoomDto {
 }
 
 #[derive(Serialize)]
-struct MessageDto {
-    id: String,
-    room_id: String,
-    sender_id: String,
-    body: String,
-    created_at: String,
+pub(crate) struct MessageDto {
+    pub(crate) id: String,
+    pub(crate) room_id: String,
+    pub(crate) sender_id: String,
+    pub(crate) body: String,
+    pub(crate) kind: String,
+    pub(crate) metadata: Option<serde_json::Value>,
+    pub(crate) reply_to: Option<String>,
+    pub(crate) edited_at: Option<String>,
+    pub(crate) deleted: bool,
+    pub(crate) reactions: Vec<crate::engage::ReactionTally>,
+    pub(crate) poll: Option<crate::engage::PollTally>,
+    pub(crate) pinned: bool,
+    pub(crate) created_at: String,
 }
 
 impl MessageDto {
-    fn of(m: &Message) -> AppResult<Self> {
+    pub(crate) fn of(m: &Message) -> AppResult<Self> {
+        // Tombstones hide content over the API (raw retained for audit).
+        let (body, metadata) = if m.deleted {
+            (String::new(), None)
+        } else {
+            (m.body.clone(), m.metadata.clone())
+        };
         Ok(Self {
             id: id_of(m.id, "message")?.to_hex(),
             room_id: m.room_id.to_hex(),
             sender_id: m.sender_id.to_hex(),
-            body: m.body.clone(),
+            body,
+            kind: m.kind.clone(),
+            metadata,
+            reply_to: m.reply_to.map(|o| o.to_hex()),
+            edited_at: m.edited_at.as_ref().map(ts),
+            deleted: m.deleted,
+            reactions: Vec::new(),
+            poll: None,
+            pinned: false,
             created_at: ts(&m.created_at),
         })
     }
@@ -185,6 +203,8 @@ async fn signup(
                 email: email.clone(),
                 username: username.into(),
                 display_name: b.display_name.filter(|s| !s.trim().is_empty()),
+                status: None,
+                avatar_key: None,
                 password_hash: hash_secret(&b.password)?,
                 is_verified: false,
                 created_at: now,
@@ -604,6 +624,8 @@ async fn me(user: AuthUser, State(state): State<AppState>) -> AppResult<impl Int
 struct UpdateMe {
     username: Option<String>,
     display_name: Option<String>,
+    status: Option<String>,
+    avatar_key: Option<String>,
 }
 
 async fn update_me(
@@ -628,6 +650,23 @@ async fn update_me(
     if let Some(dn) = b.display_name {
         set.insert("display_name", dn.trim().to_string());
     }
+    if let Some(st) = b.status {
+        let st = st.trim().to_string();
+        if st.len() > 140 {
+            return Err(AppError::BadRequest("status must be <= 140 chars".into()));
+        }
+        set.insert("status", st);
+    }
+    if let Some(key) = b.avatar_key {
+        // Avatar must reference an uploaded object (prevents arbitrary keys).
+        if !key.starts_with("media/") || key.contains("..") {
+            return Err(AppError::BadRequest("bad avatar_key".into()));
+        }
+        if !state.storage.exists(&key).await {
+            return Err(AppError::BadRequest("avatar object not found".into()));
+        }
+        set.insert("avatar_key", key);
+    }
     users
         .update_one(doc! { "_id": user.user_id }, doc! { "$set": set }, None)
         .await?;
@@ -641,7 +680,7 @@ struct ListQuery {
     limit: Option<i64>,
 }
 
-fn regex_escape(s: &str) -> String {
+pub(crate) fn regex_escape(s: &str) -> String {
     // tiny escape without the regex crate: prefix meta chars with backslash
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -771,24 +810,6 @@ async fn list_rooms(user: AuthUser, State(state): State<AppState>) -> AppResult<
     Ok((StatusCode::OK, Json(serde_json::json!({ "rooms": out }))))
 }
 
-async fn get_room(state: &AppState, room_hex: &str) -> AppResult<Room> {
-    let rid = parse_id(room_hex)?;
-    state
-        .db
-        .collection::<Room>(C_ROOMS)
-        .find_one(doc! { "_id": rid }, None)
-        .await?
-        .ok_or_else(|| AppError::NotFound("room not found".into()))
-}
-
-fn must_be_member(room: &Room, user: &ObjectId) -> AppResult<()> {
-    if room.member_ids.contains(user) {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("not a room member".into()))
-    }
-}
-
 #[derive(Deserialize)]
 struct JoinBody {
     user_id: Option<String>,
@@ -871,20 +892,24 @@ async fn history(
         .collection::<Message>(C_MESSAGES)
         .find(filter, opts)
         .await?;
-    let mut out = Vec::new();
+    let mut msgs = Vec::new();
     {
         use futures::StreamExt;
         while let Some(m) = cur.next().await {
-            out.push(MessageDto::of(&m?)?);
+            msgs.push(m?);
         }
     }
-    out.reverse(); // ascending for clients
+    msgs.reverse(); // ascending for clients
+    let out = crate::engage::enrich(&state, &user.user_id, msgs).await?;
     Ok((StatusCode::OK, Json(serde_json::json!({ "messages": out }))))
 }
 
 #[derive(Deserialize)]
 struct PostBody {
     body: String,
+    kind: Option<String>,
+    metadata: Option<serde_json::Value>,
+    reply_to: Option<String>,
 }
 
 async fn post_message(
@@ -895,16 +920,26 @@ async fn post_message(
 ) -> AppResult<impl IntoResponse> {
     let room = get_room(&state, &id).await?;
     must_be_member(&room, &user.user_id)?;
-    let body = b.body.trim().to_string();
-    if body.is_empty() || body.len() > 4000 {
-        return Err(AppError::BadRequest("body must be 1..4000 chars".into()));
-    }
     let rid = id_of(room.id, "room")?;
+    let (body, kind, metadata, reply_to) = resolve_post(
+        &state,
+        rid,
+        &b.body,
+        b.kind,
+        b.metadata,
+        b.reply_to,
+    )
+    .await?;
     let msg = Message {
         id: None,
         room_id: rid,
         sender_id: user.user_id,
         body,
+        kind: kind.clone(),
+        metadata: metadata.clone(),
+        reply_to,
+        edited_at: None,
+        deleted: false,
         created_at: DateTime::now(),
     };
     let res = state
@@ -912,15 +947,26 @@ async fn post_message(
         .collection::<Message>(C_MESSAGES)
         .insert_one(msg, None)
         .await?;
-    let mid = res.inserted_id.as_object_id().unwrap().to_hex();
     // Fan out to WS subscribers of this room.
-    let dto = MessageDto {
-        id: mid,
-        room_id: rid.to_hex(),
-        sender_id: user.user_id.to_hex(),
-        body: b.body.trim().to_string(),
-        created_at: ts(&DateTime::now()),
-    };
+    let dto = crate::engage::enrich(
+        &state,
+        &user.user_id,
+        vec![Message {
+            id: res.inserted_id.as_object_id(),
+            room_id: rid,
+            sender_id: user.user_id,
+            body: b.body.trim().to_string(),
+            kind: kind.clone(),
+            metadata: metadata.clone(),
+            reply_to,
+            edited_at: None,
+            deleted: false,
+            created_at: DateTime::now(),
+        }],
+    )
+    .await?
+    .pop()
+    .ok_or_else(|| AppError::Internal("enrich empty".into()))?;
     state.hub.broadcast_text(
         &rid.to_hex(),
         serde_json::json!({
@@ -929,6 +975,9 @@ async fn post_message(
             "message_id": dto.id,
             "sender_id": dto.sender_id,
             "body": dto.body,
+            "kind": dto.kind,
+            "metadata": dto.metadata,
+            "reply_to": dto.reply_to,
         })
         .to_string(),
     );
@@ -942,8 +991,7 @@ async fn post_message(
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/ready", get(ready))
-        .route("/api/v1/auth/signup", post(signup))
+        .route("/ready", get(ready))        .route("/api/v1/auth/signup", post(signup))
         .route("/api/v1/auth/verify-otp", post(verify_otp))
         .route("/api/v1/auth/request-otp", post(request_otp))
         .route("/api/v1/auth/login", post(login))
@@ -963,5 +1011,8 @@ pub fn router(state: AppState) -> Router {
             get(history).post(post_message),
         )
         .route("/ws/chat", get(ws_handler))
+        .merge(crate::media::router())
+        .merge(crate::engage::router())
+        .merge(crate::rooms_more::router())
         .with_state(state)
 }

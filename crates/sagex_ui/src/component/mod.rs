@@ -23,6 +23,10 @@ pub type IndexHandler = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 pub type TextHandler = Rc<dyn Fn(&String, &mut Window, &mut App)>;
 /// Flag-payload callback (GIF switch).
 pub type FlagHandler = Rc<dyn Fn(&bool, &mut Window, &mut App)>;
+/// File-row callback (open / preview attachment).
+pub type FileHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+/// Poll vote callback (option index first).
+pub type VoteHandler = Rc<dyn Fn(usize, &ClickEvent, &mut Window, &mut App)>;
 /// Theme-choice callback.
 pub type ThemeHandler = Rc<dyn Fn(&theme_toggle::ThemeChoice, &mut Window, &mut App)>;
 

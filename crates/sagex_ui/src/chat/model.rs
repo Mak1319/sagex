@@ -44,7 +44,9 @@ pub enum MessageKind {
     },
     Poll {
         question: String,
-        options: Vec<(String, u32)>,
+        options: Vec<String>,
+        votes: Vec<u32>,
+        my_vote: Option<usize>,
     },
     Event {
         title: String,
@@ -84,6 +86,8 @@ pub struct Message {
     pub mine: bool,
     /// Server message id (hex) once synced; used for WS dedup.
     pub server_id: Option<String>,
+    /// Local file attachment (offline vault). Drives the File bubble.
+    pub attachment: Option<super::files::Attachment>,
     /// Date divider label shown above this message ("Yesterday", "Today").
     pub date: String,
     /// Rich link card; auto-detected on send, seeded for demo threads.

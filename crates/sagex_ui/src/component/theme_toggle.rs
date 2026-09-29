@@ -86,7 +86,10 @@ impl ThemeToggle {
             .icon(Icon::empty().path(icon))
             .tooltip(tip);
         if active {
-            btn = btn.bg(theme.background);
+            // Inset look: container radius (14) minus its padding (3) with
+            // one extra px of optical tightening. Border-free so active and
+            // idle options keep identical metrics (no layout shift).
+            btn = btn.bg(theme.background).rounded(px(10.));
         }
         if let Some(handler) = handler.clone() {
             btn = btn.on_click(move |_, window, cx: &mut App| (handler)(&choice, window, cx));
@@ -110,10 +113,12 @@ impl RenderOnce for ThemeToggle {
             .when(horizontal, |t| t.flex_row())
             .when(!horizontal, |t| t.flex_col())
             .items_center()
-            .gap_1()
-            .rounded_full()
+            .gap(px(2.))
+            .rounded(px(14.))
+            .border_1()
+            .border_color(theme.border)
             .bg(theme.muted)
-            .p(px(2.))
+            .p(px(3.))
             .child(Self::option(
                 "theme-system",
                 "icons/sun-moon.svg",

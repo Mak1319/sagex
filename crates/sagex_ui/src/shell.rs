@@ -40,6 +40,9 @@ pub struct ShellInputs {
     pub user_search: Entity<InputState>,
     pub room_name: Entity<InputState>,
     pub profile_name: Entity<InputState>,
+    pub stage_caption: Entity<InputState>,
+    pub stage_pass: Entity<InputState>,
+    pub poll: crate::chat::PollInputs,
 }
 
 pub struct AppShell {
@@ -56,6 +59,9 @@ pub struct AppShell {
     user_search: Option<Entity<InputState>>,
     room_name: Option<Entity<InputState>>,
     profile_name: Option<Entity<InputState>>,
+    stage_caption: Option<Entity<InputState>>,
+    stage_pass: Option<Entity<InputState>>,
+    poll: Option<crate::chat::PollInputs>,
     pub(crate) appearance_sub: Option<Subscription>,
 }
 
@@ -101,6 +107,9 @@ impl AppShell {
             user_search: Some(inputs.user_search),
             room_name: Some(inputs.room_name),
             profile_name: Some(inputs.profile_name),
+            stage_caption: Some(inputs.stage_caption),
+            stage_pass: Some(inputs.stage_pass),
+            poll: Some(inputs.poll),
             appearance_sub: None,
         };
         this.try_auto_login(cx);
@@ -175,6 +184,11 @@ impl AppShell {
                 self.profile_name
                     .take()
                     .expect("chat inputs consumed twice"),
+                self.stage_caption
+                    .take()
+                    .expect("chat inputs consumed twice"),
+                self.stage_pass.take().expect("chat inputs consumed twice"),
+                self.poll.take().expect("chat inputs consumed twice"),
                 api,
                 store,
             )

@@ -63,32 +63,10 @@ impl ChatApp {
                 ticks: MessageStatus::Sent,
                 deleted: false,
                 server_id: None,
+                attachment: None,
             });
             c.last_time = "now".to_string();
             let _ = text;
-        }
-    }
-
-    /// Push a typed (non-text) message; `text` feeds list preview + search.
-    pub(super) fn push_kind(&mut self, chat_id: usize, kind: MessageKind, text: String) {
-        let id = self.next_msg;
-        self.next_msg += 1;
-        if let Some(c) = self.chats.iter_mut().find(|c| c.id == chat_id) {
-            c.messages.push(Message {
-                id,
-                sender: "You".to_string(),
-                link: None,
-                text,
-                time: "now".to_string(),
-                mine: true,
-                date: "Today".to_string(),
-                kind,
-                reactions: vec![],
-                ticks: MessageStatus::Sent,
-                deleted: false,
-                server_id: None,
-            });
-            c.last_time = "now".to_string();
         }
     }
 

@@ -110,6 +110,8 @@ async fn authenticated_register_matrix() {
         ledger,
         retry_batch: 16,
         auth: ca.verifier(),
+        auditor_sub: "ledger-auditor".into(),
+        logs_enabled: true,
     });
     let app = sagex_gateway::api::router(state.clone());
     let listener = TcpListener::bind(format!("127.0.0.1:{gw_port}")).await.unwrap();

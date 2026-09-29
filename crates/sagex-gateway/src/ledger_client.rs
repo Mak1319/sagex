@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tracing::{info, warn};
 
+use sagex_ledger::logbuf::LogEntry;
 use sagex_ledger::model::{Block, DecryptionRecord};
 use sagex_ledger::proto::{Envelope, Message, Response, ResponseEnvelope};
 
@@ -201,4 +202,58 @@ impl LedgerClient {
         }
         out
     }
+
+    /// One node's auditor log tail, tagged with its address.
+    pub async fn node_logs_one(
+        &self,
+        addr: &str,
+        limit: u64,
+        level: Option<String>,
+    ) -> NodeLogs {
+        let env = Envelope {
+            req_id: Some(self.req_id()),
+            from: None,
+            msg: Message::GetLogs { limit, level },
+        };
+        match self.roundtrip(addr, env, self.query_timeout).await {
+            Ok(resp) => match resp.resp {
+                Response::LogsResult { entries, error } => NodeLogs {
+                    node_addr: addr.into(),
+                    entries: Some(entries),
+                    error,
+                },
+                other => NodeLogs {
+                    node_addr: addr.into(),
+                    entries: None,
+                    error: Some(format!("unexpected: {other:?}")),
+                },
+            },
+            Err(e) => NodeLogs {
+                node_addr: addr.into(),
+                entries: None,
+                error: Some(format!("{e:#}")),
+            },
+        }
+    }
+
+    /// Fan-out log tails to every configured node (auditor view).
+    pub async fn node_logs_all(
+        &self,
+        limit: u64,
+        level: Option<String>,
+    ) -> Vec<NodeLogs> {
+        let mut out = Vec::with_capacity(self.addrs.len());
+        for addr in &self.addrs {
+            out.push(self.node_logs_one(addr, limit, level.clone()).await);
+        }
+        out
+    }
+}
+
+/// Auditor log tail for one ledger node (JSON-serializable for `GET /logs`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NodeLogs {
+    pub node_addr: String,
+    pub entries: Option<Vec<LogEntry>>,
+    pub error: Option<String>,
 }

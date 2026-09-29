@@ -24,10 +24,26 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
     let cli = Cli::parse();
+    // Size the auditor ring buffer from config before any event is emitted.
+    // (Unparseable config falls back to the default here; run() re-reads
+    // strictly and fails fast, so nothing is masked.)
+    let buf_cap = match &cli.cmd {
+        Cmd::Run { config } => GatewayConfig::from_file(config)
+            .map(|c| c.logs.buffer)
+            .unwrap_or(2000),
+        Cmd::Init => 2000,
+    };
+    // Same auditor ring buffer as the ledger nodes (served at GET /logs).
+    let log_buffer = sagex_ledger::LogBuffer::init_global(buf_cap).clone();
+    {
+        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::from_default_env())
+            .with(tracing_subscriber::fmt::layer())
+            .with(sagex_ledger::LogLayer::new(log_buffer))
+            .init();
+    }
     match cli.cmd {
         Cmd::Init => {
             println!("# sagex-gateway config — save as gateway.toml");
@@ -64,7 +80,17 @@ pub async fn run(config_path: &str) -> anyhow::Result<()> {
         ledger,
         retry_batch: cfg.outbox.retry_batch,
         auth,
+        auditor_sub: cfg.logs.auditor_sub.clone(),
+        logs_enabled: cfg.logs.enabled,
     });
+    if cfg.logs.enabled {
+        tracing::info!(
+            "gateway auditor logs at GET /logs (subject {:?})",
+            cfg.logs.auditor_sub
+        );
+    } else {
+        tracing::warn!("gateway [logs].enabled=false: GET /logs is disabled");
+    }
     tokio::spawn(api::outbox_worker(
         state.clone(),
         std::time::Duration::from_millis(cfg.outbox.retry_interval_ms.max(250)),

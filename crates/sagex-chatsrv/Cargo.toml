@@ -9,6 +9,10 @@ license = "UNLICENSED"
 name = "sagex-chatsrv"
 path = "src/main.rs"
 
+[lib]
+name = "sagex_chatsrv"
+path = "src/lib.rs"
+
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
@@ -31,6 +35,9 @@ thiserror = "2"
 anyhow = "1"
 rustpq = { version = "0.3.0", features = ["mldsa65", "std"] }
 sagex-crypto = { path = "../sagex-crypto" }
+s3 = "0.1"
+async-trait = "0.1"
+http = "1"
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

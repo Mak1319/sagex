@@ -88,6 +88,8 @@ async fn gateway_queues_when_down_then_drains_and_proxies() {
         // Legacy open-intake coverage: auth deliberately disabled here.
         // Authenticated intake is covered in tests/auth.rs.
         auth: AuthVerifier::disabled(),
+        auditor_sub: "ledger-auditor".into(),
+        logs_enabled: true,
     });
     let app = sagex_gateway::api::router(state.clone());
     tokio::spawn(sagex_gateway::api::outbox_worker(

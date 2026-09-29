@@ -1,4 +1,4 @@
-//! WhatsApp-style attach sheet: 8 rows, click selects by index.
+//! WhatsApp-style attach sheet: rows map by index in chat code.
 
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement,
@@ -15,16 +15,13 @@ pub struct AttachMenu {
 }
 
 impl AttachMenu {
-    /// (icon path, label, chip color) rows.
+    /// (icon path, label, chip color) rows. Indices: 0 Document,
+    /// 1 Photos & videos, 2 Audio (record), 3 Poll (create).
     pub const ITEMS: &'static [(&'static str, &'static str, u32)] = &[
         ("icons/file-text.svg", "Document", 0x7f5af0),
         ("icons/image.svg", "Photos & videos", 0x0199d5),
-        ("icons/camera.svg", "Camera", 0xd3396c),
         ("icons/headphones.svg", "Audio", 0xe6890b),
-        ("icons/user.svg", "Contact", 0x0199d5),
         ("icons/chart-column.svg", "Poll", 0xe8a90b),
-        ("icons/calendar.svg", "Event", 0xe3618c),
-        ("icons/sticker.svg", "New sticker", 0x0e7c61),
     ];
 
     pub fn new() -> Self {

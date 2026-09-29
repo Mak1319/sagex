@@ -7,7 +7,13 @@ use mongodb::{
     Client, Database, IndexModel,
 };
 
-use crate::{config::Config, error::AppResult, jose_mldsa::JoseSigner, ws::ChatHub};
+use crate::{
+    config::Config,
+    error::AppResult,
+    jose_mldsa::JoseSigner,
+    storage::SharedStorage,
+    ws::ChatHub,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -15,6 +21,7 @@ pub struct AppState {
     pub jose: Arc<JoseSigner>,
     pub hub: Arc<ChatHub>,
     pub config: Arc<Config>,
+    pub storage: SharedStorage,
 }
 
 pub const C_USERS: &str = "users";
@@ -22,6 +29,14 @@ pub const C_OTPS: &str = "otps";
 pub const C_SESSIONS: &str = "sessions";
 pub const C_ROOMS: &str = "rooms";
 pub const C_MESSAGES: &str = "messages";
+pub const C_POLL_VOTES: &str = "poll_votes";
+pub const C_REACTIONS: &str = "reactions";
+pub const C_PINS: &str = "pins";
+pub const C_STARS: &str = "stars";
+pub const C_READ_MARKERS: &str = "read_markers";
+pub const C_ROOM_SETTINGS: &str = "room_settings";
+pub const C_REPORTS: &str = "reports";
+pub const C_BLOCKS: &str = "blocks";
 
 pub async fn connect_db(cfg: &Config) -> AppResult<Database> {
     let mut opts = ClientOptions::parse(&cfg.mongodb_uri)
@@ -35,7 +50,7 @@ pub async fn connect_db(cfg: &Config) -> AppResult<Database> {
 
 /// Unique + TTL indexes. Idempotent — safe to run on every boot.
 pub async fn ensure_indexes(db: &Database) -> AppResult<()> {
-    use crate::models::{Message, Otp, Room, Session, User};
+    use crate::models::{Block, Message, Otp, Pin, PollVote, Reaction, ReadMarker, Report, Room, RoomSettings, Session, Star, User};
     let users = db.collection::<User>(C_USERS);
     users
         .create_index(
@@ -124,6 +139,102 @@ pub async fn ensure_indexes(db: &Database) -> AppResult<()> {
         .create_index(
             IndexModel::builder()
                 .keys(doc! { "room_id": 1, "_id": -1 })
+                .build(),
+            None,
+        )
+        .await?;
+    // Full-text-ish search support (substring fallback via regex).
+    db.collection::<Message>(C_MESSAGES)
+        .create_index(
+            IndexModel::builder().keys(doc! { "body": "text" }).build(),
+            None,
+        )
+        .await?;
+
+    let unique = || {
+        IndexOptions::builder()
+            .unique(true)
+            .build()
+    };
+    // One vote per user per message (change = delete + re-vote).
+    db.collection::<PollVote>(C_POLL_VOTES)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "message_id": 1, "user_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    // One reaction-emoji per user per message (toggle semantics).
+    db.collection::<Reaction>(C_REACTIONS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "message_id": 1, "user_id": 1, "emoji": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<Reaction>(C_REACTIONS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "message_id": 1 })
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<Pin>(C_PINS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "room_id": 1, "message_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<Star>(C_STARS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "user_id": 1, "message_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<ReadMarker>(C_READ_MARKERS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "room_id": 1, "user_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<RoomSettings>(C_ROOM_SETTINGS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "room_id": 1, "user_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    // One report per reporter/target pair; one block row per pair.
+    db.collection::<Report>(C_REPORTS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "reporter_id": 1, "reported_id": 1 })
+                .options(unique())
+                .build(),
+            None,
+        )
+        .await?;
+    db.collection::<Block>(C_BLOCKS)
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! { "blocker_id": 1, "blocked_id": 1 })
+                .options(unique())
                 .build(),
             None,
         )

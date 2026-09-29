@@ -22,6 +22,10 @@ pub struct AppState {
     pub ledger: Arc<LedgerClient>,
     pub retry_batch: usize,
     pub auth: AuthVerifier,
+    /// Required permit subject for `GET /logs` (from `[logs].auditor_sub`).
+    pub auditor_sub: String,
+    /// Serve `GET /logs` at all (from `[logs].enabled`).
+    pub logs_enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -312,6 +316,100 @@ async fn get_health() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response()
 }
 
+#[derive(Debug, Deserialize)]
+struct LogsQuery {
+    #[serde(default)]
+    level: Option<String>,
+    #[serde(default)]
+    limit: Option<u64>,
+    /// `gateway`, a node addr (as listed in config), or omitted = everything.
+    #[serde(default)]
+    source: Option<String>,
+}
+
+/// Restricted auditor log view: this process's ring buffer plus a fan-out
+/// tail from every ledger node.
+///
+/// Access is gated by a CA-issued **auditor permit** (`Authorization: Bearer
+/// <token>`, e.g. `sagex-certauth issue-permit --identity ledger-auditor`):
+/// same `sagex-auth` verification as intake, but the permit's subject must
+/// equal `[logs].auditor_sub` — and unlike intake permits the JTI is *not*
+/// burned, so one permit serves a whole UI session (expiry still enforced).
+/// Missing/malformed/invalid → 401, wrong subject → 403.
+async fn get_logs(
+    State(st): State<Arc<AppState>>,
+    Query(q): Query<LogsQuery>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    if !st.logs_enabled {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!(ErrorBody { error: "logs disabled".into() })),
+        )
+            .into_response();
+    }
+    if st.auth.enabled {
+        let token = headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let token = match token {
+            Some(t) => t,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!(ErrorBody {
+                        error: "auditor permit required".into()
+                    })),
+                )
+                    .into_response();
+            }
+        };
+        let claims = match st.auth.verify_permit(token) {
+            Ok(c) => c,
+            Err(_) => {
+                warn!("gateway /logs permit rejected");
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!(ErrorBody { error: "invalid permit".into() })),
+                )
+                    .into_response();
+            }
+        };
+        if claims.sub != st.auditor_sub {
+            warn!("gateway /logs permit sub {:?} is not the auditor", claims.sub);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!(ErrorBody {
+                    error: "permit is not an auditor credential".into()
+                })),
+            )
+                .into_response();
+        }
+    }
+    let limit = q.limit.unwrap_or(200).clamp(1, 500);
+    let want_gateway = q.source.as_deref().is_none_or(|s| s == "gateway");
+    let gateway = if want_gateway {
+        Some(sagex_ledger::LogBuffer::global().snapshot(q.level.as_deref(), limit as usize))
+    } else {
+        None
+    };
+    let nodes = match q.source.as_deref() {
+        None | Some("all") | Some("nodes") => {
+            Some(st.ledger.node_logs_all(limit, q.level.clone()).await)
+        }
+        Some("gateway") => Some(vec![]),
+        Some(addr) => Some(vec![st.ledger.node_logs_one(addr, limit, q.level.clone()).await]),
+    };
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "gateway": gateway, "nodes": nodes })),
+    )
+        .into_response()
+}
+
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/register", post(post_register))
@@ -320,6 +418,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/block/:index", get(get_block))
         .route("/status", get(get_status))
         .route("/outbox", get(get_outbox))
+        .route("/logs", get(get_logs))
         .route("/health", get(get_health))
         .with_state(state)
 }

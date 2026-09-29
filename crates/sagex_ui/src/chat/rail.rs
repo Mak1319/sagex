@@ -49,16 +49,6 @@ impl ChatApp {
                 "rail-chats",
             ))
             .child(item(
-                Icon::empty().path("icons/phone.svg"),
-                false,
-                "rail-calls",
-            ))
-            .child(item(
-                Icon::empty().path("icons/circle-dot.svg"),
-                false,
-                "rail-status",
-            ))
-            .child(item(
                 Icon::empty().path("icons/users.svg"),
                 false,
                 "rail-groups",

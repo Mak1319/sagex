@@ -1,6 +1,7 @@
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-    Window, deferred, div, prelude::FluentBuilder, px, rgb,
+    Context, ExternalPaths, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, Window, deferred, div, img, prelude::FluentBuilder, px,
+    rgb,
 };
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable, StyledExt as _,
@@ -8,6 +9,7 @@ use gpui_component::{
 };
 
 use super::ChatApp;
+use super::attach::PreviewSel;
 use super::model::ChatKind;
 use crate::component::ScrollThumb;
 
@@ -24,6 +26,9 @@ impl ChatApp {
         }
         if self.show_new_chat {
             return self.render_new_chat(cx);
+        }
+        if self.show_poll {
+            return self.render_poll_sheet(cx);
         }
         let pos = self.active_pos();
         let Some(pos) = pos else {
@@ -90,6 +95,20 @@ impl ChatApp {
             .flex_col()
             .relative()
             .bg(theme.background)
+            .on_drag_move({
+                let view = cx.entity();
+                move |_: &gpui::DragMoveEvent<ExternalPaths>, _, cx: &mut gpui::App| {
+                    view.update(cx, |this: &mut ChatApp, cx| this.note_drag(cx));
+                }
+            })
+            .on_drop({
+                let view = cx.entity();
+                move |paths: &ExternalPaths, _, cx: &mut gpui::App| {
+                    view.update(cx, |this: &mut ChatApp, cx| {
+                        this.drop_paths(paths.paths().to_vec(), cx)
+                    });
+                }
+            })
             .child(
                 // header
                 div()
@@ -146,20 +165,6 @@ impl ChatApp {
                                     .text_color(theme.muted_foreground)
                                     .child(subtitle),
                             ),
-                    )
-                    .child(
-                        Button::new("call-btn")
-                            .ghost()
-                            .large()
-                            .icon(Icon::empty().path("icons/video.svg").large())
-                            .on_click(|_, _, _| println!("video call")),
-                    )
-                    .child(
-                        Button::new("call-caret-btn")
-                            .ghost()
-                            .small()
-                            .icon(IconName::ChevronDown)
-                            .on_click(|_, _, _| println!("call options")),
                     )
                     .child(
                         Button::new("chat-search-btn")
@@ -255,6 +260,130 @@ impl ChatApp {
                 },
             )
             .child(self.render_composer_zone(window, cx))
+            // drag & drop highlight (below menus at 30)
+            .when(self.drag_hover, |t| {
+                let mut dim = theme.muted;
+                dim.a = 0.85;
+                t.child(
+                    deferred(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(dim)
+                            .child(
+                                div()
+                                    .rounded_lg()
+                                    .border_2()
+                                    .border_color(rgb(crate::component::ACCENT_GREEN))
+                                    .bg(theme.popover)
+                                    .px_6()
+                                    .py_4()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        Icon::empty()
+                                            .path("icons/download.svg")
+                                            .size(px(28.))
+                                            .text_color(rgb(crate::component::ACCENT_GREEN)),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_lg()
+                                            .font_bold()
+                                            .text_color(theme.foreground)
+                                            .child("Drop files to send"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(theme.muted_foreground)
+                                            .child("Up to 10 files · 100 MB each"),
+                                    ),
+                            ),
+                    )
+                    .with_priority(30),
+                )
+            })
+            // full image preview overlay
+            .when_some(self.preview.clone(), |t, prev| {
+                t.child(deferred(self.render_preview(cx, prev)).with_priority(200))
+            })
             .into_any_element()
+    }
+
+    /// Full-size lightbox for an image attachment (click anywhere to close).
+    pub(super) fn render_preview(
+        &mut self,
+        cx: &mut Context<Self>,
+        prev: PreviewSel,
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let mut dim = theme.muted;
+        dim.a = 0.94;
+        let open_path = prev.path.clone();
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap_3()
+            .bg(dim)
+            .id("img-preview-dismiss")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.preview = None;
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .text_lg()
+                    .font_bold()
+                    .text_color(theme.foreground)
+                    .child(prev.name.clone()),
+            )
+            .child(
+                div()
+                    .w(px(640.))
+                    .h(px(460.))
+                    .rounded_lg()
+                    .overflow_hidden()
+                    .bg(rgb(0x000000))
+                    .child(img(prev.path.as_path()).w_full().h_full()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(
+                        Button::new("preview-open")
+                            .primary()
+                            .small()
+                            .label("Open externally")
+                            .on_click(cx.listener(move |_, _, _, _| {
+                                ChatApp::open_path(&open_path);
+                            })),
+                    )
+                    .child(
+                        Button::new("preview-close")
+                            .ghost()
+                            .small()
+                            .label("Close")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.preview = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
     }
 }

@@ -1,23 +1,15 @@
-mod auth;
-mod config;
-mod error;
-mod jose_mldsa;
-mod models;
-mod routes;
-mod state;
-mod ws;
-
 use std::sync::Arc;
 
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-use crate::{
+use sagex_chatsrv::{
     config::Config,
     jose_mldsa::JoseSigner,
+    routes,
     state::{connect_db, ensure_indexes, AppState},
+    storage::{FakeStorage, S3Storage, SharedStorage, Storage},
     ws::ChatHub,
 };
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -53,11 +45,39 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("ML-DSA-65 signer loaded (kid={})", signer.kid());
     }
 
+    // Object storage: real MinIO when configured, in-memory fake otherwise.
+    // A configured-but-unreachable MinIO is fatal (media URLs must resolve);
+    // an unconfigured one only warns (text chat is unaffected).
+    let storage: SharedStorage = if cfg.minio_endpoint.trim().is_empty() {
+        tracing::warn!(
+            "MINIO_ENDPOINT unset — media endpoints use an in-memory fake (dev only)"
+        );
+        Arc::new(FakeStorage::default())
+    } else {
+        let s3 = S3Storage::new(
+            &cfg.minio_endpoint,
+            &cfg.minio_bucket,
+            &cfg.minio_access_key,
+            &cfg.minio_secret_key,
+        )
+        .map_err(|e| anyhow::anyhow!("minio config: {e}"))?;
+        s3.ensure_bucket()
+            .await
+            .map_err(|e| anyhow::anyhow!("minio bootstrap: {e}"))?;
+        tracing::info!(
+            "minio ready: endpoint={} bucket={}",
+            cfg.minio_endpoint,
+            cfg.minio_bucket
+        );
+        Arc::new(s3)
+    };
+
     let state = AppState {
         db,
         jose: Arc::new(signer),
         hub: Arc::new(ChatHub::new()),
         config: Arc::new(cfg.clone()),
+        storage,
     };
     let app = routes::router(state)
         .layer(CorsLayer::permissive())

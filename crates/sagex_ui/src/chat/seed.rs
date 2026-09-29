@@ -26,6 +26,7 @@ fn msg(
         deleted: false,
         ticks,
         server_id: None,
+        attachment: None,
     }
 }
 
@@ -54,6 +55,7 @@ fn link_msg(
         deleted: false,
         ticks,
         server_id: None,
+        attachment: None,
         link: Some(LinkPreview {
             domain: domain.to_string(),
             title: title.to_string(),

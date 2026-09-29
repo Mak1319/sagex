@@ -2,7 +2,8 @@
 /node_modules
 /realfiles
 /test-*
-# Screenshot_*
+# Screenshot_* (desktop captures, any directory)
+Screenshot_*.png
 /*test*
 molecular-svg-nextjs
 .cursor
@@ -10,3 +11,14 @@ molecular-svg-nextjs
 .env
 # CA key material (secrets)
 ca-data/
+# startup script runtime: logs, pidfiles, generated configs
+logs/
+.pids/
+runtime/
+# ledger/gateway runtime databases (nodes recreate missing DBs on boot)
+data/*.db*
+# node configs hold real keysets (local-only); tracked .toml.example are the templates
+crates/sagex-ledger/config/nodes/node0.toml
+crates/sagex-ledger/config/nodes/node1.toml
+crates/sagex-ledger/config/nodes/node2.toml
+crates/sagex-ledger/config/nodes/node3.toml

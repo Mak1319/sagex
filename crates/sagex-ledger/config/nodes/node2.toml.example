@@ -1,0 +1,31 @@
+# EXAMPLE node config (node 2). Copy to node2.toml and fill keys.
+# Generate a fresh keypair per node:
+#   ./target/debug/sagex-ledger-node init --id 2 --listen 127.0.0.1:7002 --db data/node2.db
+# then fill this node's secret_key/pubkey from its own output and the
+# [[peers]] entries from the OTHER nodes' outputs (id/addr/pubkey must match).
+# Never commit real keys.
+[node]
+id = 2
+listen = "127.0.0.1:7002"
+db = "data/node2.db"
+secret_key = "<GENERATE via init>"
+pubkey = "<GENERATE via init>"
+
+[consensus]
+f = 1
+view_timeout_ms = 8000
+
+[[peers]]
+id = 0
+addr = "127.0.0.1:7000"
+pubkey = "<GENERATE via init>"
+
+[[peers]]
+id = 1
+addr = "127.0.0.1:7001"
+pubkey = "<GENERATE via init>"
+
+[[peers]]
+id = 3
+addr = "127.0.0.1:7003"
+pubkey = "<GENERATE via init>"

@@ -41,11 +41,15 @@ impl AuthApp {
             .child(
                 Button::new("reset-submit")
                     .primary()
-                    .label("Save new password")
+                    .label(if self.busy {
+                        "Saving…"
+                    } else {
+                        "Save new password"
+                    })
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        let p1 = this.reset_password.read(cx).value();
-                        let p2 = this.reset_confirm.read(cx).value();
+                        let p1 = this.reset_password.read(cx).value().to_string();
+                        let p2 = this.reset_confirm.read(cx).value().to_string();
                         window.prevent_default();
                         if p1.is_empty() {
                             this.notice = Some("Enter a new password.".to_string());
@@ -57,10 +61,37 @@ impl AuthApp {
                             cx.notify();
                             return;
                         }
-                        println!("reset submit len={}", p1.len());
-                        this.navigate(AuthPage::Login, cx);
-                        this.notice = Some("Password updated. Sign in.".to_string());
+                        let code = this.otp.read(cx).value().to_string();
+                        if code.chars().count() != 6 {
+                            this.notice =
+                                Some("Go back and verify the 6-digit code first.".to_string());
+                            cx.notify();
+                            return;
+                        }
+                        if this.busy {
+                            return;
+                        }
+                        this.busy = true;
+                        this.notice = None;
                         cx.notify();
+                        let api = this.api.clone();
+                        let email = this.pending_email.clone();
+                        crate::backend::request(
+                            cx,
+                            async move { api.reset_password(&email, &code, &p1).await },
+                            |this, res: Result<(), crate::backend::BackendError>, cx| match res {
+                                Ok(()) => {
+                                    this.busy = false;
+                                    this.navigate(AuthPage::Login, cx);
+                                    this.notice = Some(
+                                        "Password updated. Sign in on all devices.".to_string(),
+                                    );
+                                    cx.notify();
+                                }
+                                Err(e) => this.fail(e, cx),
+                            },
+                        )
+                        .detach();
                     })),
             )
             .child(back_to_login(cx))

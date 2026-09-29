@@ -6,3 +6,7 @@
 /*test*
 molecular-svg-nextjs
 .cursor
+# local env files (keep *.example tracked)
+.env
+# CA key material (secrets)
+ca-data/

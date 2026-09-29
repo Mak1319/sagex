@@ -82,6 +82,8 @@ pub struct Message {
     pub text: String,
     pub time: String,
     pub mine: bool,
+    /// Server message id (hex) once synced; used for WS dedup.
+    pub server_id: Option<String>,
     /// Date divider label shown above this message ("Yesterday", "Today").
     pub date: String,
     /// Rich link card; auto-detected on send, seeded for demo threads.
@@ -145,6 +147,8 @@ pub struct Chat {
     pub chat_pinned: bool,
     pub last_time: String,
     pub messages: Vec<Message>,
+    /// Server room id (hex). `None` for local-only preview chats.
+    pub server_id: Option<String>,
 }
 
 impl Chat {

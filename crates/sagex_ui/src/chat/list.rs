@@ -10,7 +10,7 @@ use gpui_component::{
 
 use super::{
     ChatApp, ChatMenuSub,
-    model::{Chat, ChatFilter, ChatKind, Message, MessageKind, MessageStatus},
+    model::{Chat, ChatFilter, ChatKind},
 };
 use crate::component::{Avatar, MenuCard, MenuRow, ScrollThumb, UnreadBadge};
 
@@ -53,14 +53,7 @@ impl ChatApp {
             .when(selected, |t| t.bg(theme.muted))
             .hover(|s| s.bg(theme.muted))
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.active_id = id;
-                this.show_emoji = false;
-                this.show_attach = false;
-                this.reply_to = None;
-                if let Some(c) = this.chats.iter_mut().find(|c| c.id == id) {
-                    c.unread = 0;
-                }
-                cx.notify();
+                this.select_remote(id, cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,
@@ -178,39 +171,11 @@ impl ChatApp {
                                 .icon(IconName::Plus)
                                 .label("New")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    let id = this.next_id;
-                                    this.next_id += 1;
-                                    this.chats.insert(
-                                        0,
-                                        Chat {
-                                            id,
-                                            name: format!("New Chat {}", id),
-                                            subtitle: "online".to_string(),
-                                            kind: ChatKind::Dm,
-                                            initials: "NC".to_string(),
-                                            color: 0x54656f,
-                                            unread: 0,
-                                            fav: false,
-                                            archived: false,
-                                            chat_pinned: false,
-                                            last_time: "now".to_string(),
-                                            messages: vec![Message {
-                                                id: this.next_msg,
-                                                sender: "System".to_string(),
-                                                text: "Say hello 👋".to_string(),
-                                                time: "now".to_string(),
-                                                mine: false,
-                                                date: "Today".to_string(),
-                                                link: None,
-                                                kind: MessageKind::Text,
-                                                reactions: vec![],
-                                                deleted: false,
-                                                ticks: MessageStatus::Sent,
-                                            }],
-                                        },
-                                    );
-                                    this.next_msg += 1;
-                                    this.active_id = id;
+                                    // Real flow: open the new-chat panel (user
+                                    // search → DM/group on the server).
+                                    this.show_new_chat = true;
+                                    this.show_profile = false;
+                                    this.search_users(cx);
                                     cx.notify();
                                 })),
                         ),

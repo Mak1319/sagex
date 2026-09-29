@@ -190,8 +190,9 @@ impl ChatApp {
                 self.close_menus();
             }
             12 => {
-                self.notice = Some("Done".to_string());
+                // live leave: revoke server membership, drop the row
                 self.close_menus();
+                self.leave_current(cx);
             }
             _ => {
                 self.notice = Some("Done (UI preview)".to_string());

@@ -1,8 +1,8 @@
 //! Far-left icon rail.
 
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, Styled, Window, div,
-    prelude::FluentBuilder, px, rgb,
+    Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
+    Window, div, prelude::FluentBuilder, px, rgb,
 };
 use gpui_component::{ActiveTheme, Icon, IconName};
 
@@ -63,8 +63,24 @@ impl ChatApp {
                 false,
                 "rail-groups",
             ))
-            .child(item(Icon::new(IconName::Settings), false, "rail-settings"))
+            .child(
+                item(Icon::new(IconName::Settings), false, "rail-settings").on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.show_profile = !this.show_profile;
+                        this.show_new_chat = false;
+                        cx.notify();
+                    },
+                )),
+            )
             .child(div().flex_1())
+            .child(
+                // realtime connection dot: green / amber / red
+                div().size(px(8.)).rounded_full().bg(rgb(match self.conn {
+                    super::ConnStatus::Online => 0x25d366,
+                    super::ConnStatus::Connecting => 0xe6890b,
+                    super::ConnStatus::Offline => 0xd3396c,
+                })),
+            )
             .child(ThemeToggle::new(self.theme_mode).on_select(cx.listener(
                 |this, mode: &ThemeChoice, window, cx| {
                     this.theme_mode = *mode;
@@ -82,7 +98,14 @@ impl ChatApp {
                     .bg(rgb(0x54656f))
                     .text_color(rgb(0xffffff))
                     .text_sm()
-                    .child("YO"),
+                    .cursor_pointer()
+                    .id("rail-avatar")
+                    .child(crate::chat::model::sender_initials(&self.my_name()))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.show_profile = !this.show_profile;
+                        this.show_new_chat = false;
+                        cx.notify();
+                    })),
             )
     }
 }

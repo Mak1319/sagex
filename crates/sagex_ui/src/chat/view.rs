@@ -18,6 +18,13 @@ impl ChatApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
+        // account panels take over the column even with no chat selected
+        if self.show_profile {
+            return self.render_profile(cx);
+        }
+        if self.show_new_chat {
+            return self.render_new_chat(cx);
+        }
         let pos = self.active_pos();
         let Some(pos) = pos else {
             return div()
@@ -34,6 +41,7 @@ impl ChatApp {
             return self.render_group_info(cx);
         }
         let is_group = chat.kind == ChatKind::Group;
+        let subtitle = format!("{} · {}", self.live_subtitle(&chat), self.conn_label());
 
         let mut bubbles: Vec<gpui::AnyElement> = vec![];
         let mut last_date = String::new();
@@ -136,7 +144,7 @@ impl ChatApp {
                                     .text_sm()
                                     .truncate()
                                     .text_color(theme.muted_foreground)
-                                    .child(chat.subtitle.clone()),
+                                    .child(subtitle),
                             ),
                     )
                     .child(

@@ -1,4 +1,4 @@
-use gpui::{App, Context, Window};
+use gpui::App;
 
 use super::{
     ChatApp,
@@ -62,6 +62,7 @@ impl ChatApp {
                 reactions: vec![],
                 ticks: MessageStatus::Sent,
                 deleted: false,
+                server_id: None,
             });
             c.last_time = "now".to_string();
             let _ = text;
@@ -85,6 +86,7 @@ impl ChatApp {
                 reactions: vec![],
                 ticks: MessageStatus::Sent,
                 deleted: false,
+                server_id: None,
             });
             c.last_time = "now".to_string();
         }
@@ -119,18 +121,6 @@ impl ChatApp {
             .flat_map(|c| c.messages.iter())
             .find(|m| m.id == msg_id)
             .cloned()
-    }
-
-    pub(super) fn send_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.composer.read(cx).value().trim().to_string();
-        if text.is_empty() || self.active_pos().is_none() {
-            return;
-        }
-        let id = self.active_id;
-        self.push_message(id, "You", text, true);
-        self.composer
-            .update(cx, |s, cx| s.set_value("", window, cx));
-        cx.notify();
     }
 
     /// Viewport-clamped top for a floating menu near a scroll child:

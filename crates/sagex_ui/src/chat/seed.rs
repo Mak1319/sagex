@@ -25,6 +25,7 @@ fn msg(
         reactions: vec![],
         deleted: false,
         ticks,
+        server_id: None,
     }
 }
 
@@ -52,6 +53,7 @@ fn link_msg(
         reactions: vec![],
         deleted: false,
         ticks,
+        server_id: None,
         link: Some(LinkPreview {
             domain: domain.to_string(),
             title: title.to_string(),
@@ -73,6 +75,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: true,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "9:41 am".to_string(),
             messages: vec![
                 msg(
@@ -115,6 +118,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: false,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "8:15 am".to_string(),
             messages: vec![
                 msg(
@@ -148,6 +152,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: true,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "Yesterday".to_string(),
             messages: vec![
                 msg(
@@ -181,6 +186,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: true,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "Tuesday".to_string(),
             messages: vec![
                 msg(
@@ -214,6 +220,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: false,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "7:02 am".to_string(),
             messages: vec![
                 msg(
@@ -256,6 +263,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: false,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "Monday".to_string(),
             messages: vec![
                 msg(
@@ -289,6 +297,7 @@ pub fn seed_chats() -> Vec<Chat> {
             fav: false,
             archived: false,
             chat_pinned: false,
+            server_id: None,
             last_time: "12:46 pm".to_string(),
             messages: vec![
                 msg(

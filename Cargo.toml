@@ -8,5 +8,8 @@ members = [
     "crates/sagex_test",
     "crates/sagex-format",
     "crates/sagex-appx",
+    "crates/sagex-certauth",
+    "crates/sagex-chatsrv",
+    "crates/sagex-ledger",
 ]
 resolver = "3"

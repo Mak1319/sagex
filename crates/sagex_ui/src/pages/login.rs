@@ -61,35 +61,51 @@ impl AuthApp {
             )
             .child(
                 Checkbox::new("login-remember")
-                    .label("Remember me")
+                    .label("Remember me (30 days)")
                     .checked(self.remember_me)
                     .on_click(cx.listener(|this, checked: &bool, _, cx| {
                         this.remember_me = *checked;
+                        this.store.persist = *checked;
+                        if !checked {
+                            this.store.drop_file();
+                        }
                         cx.notify();
                     })),
             )
             .child(
                 Button::new("login-submit")
                     .primary()
-                    .label("Login")
+                    .label(if self.busy { "Signing in…" } else { "Login" })
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        let email = this.login_email.read(cx).value();
-                        let pass = this.login_password.read(cx).value();
+                        let email = this.login_email.read(cx).value().trim().to_string();
+                        let pass = this.login_password.read(cx).value().to_string();
                         window.prevent_default();
-                        if email.trim().is_empty() || pass.is_empty() {
+                        if email.is_empty() || pass.is_empty() {
                             this.notice = Some("Enter your email and password.".to_string());
                             cx.notify();
                             return;
                         }
-                        this.notice = Some(format!("Welcome back, {}!", email.trim()));
-                        println!(
-                            "login submit email={} len={} remember={}",
-                            email,
-                            pass.len(),
-                            this.remember_me
-                        );
+                        if this.busy {
+                            return;
+                        }
+                        this.busy = true;
+                        this.notice = None;
                         cx.notify();
+                        let api = this.api.clone();
+                        crate::backend::request(
+                            cx,
+                            async move {
+                                let tokens = api.login(&email, &pass).await?;
+                                let me = api.me(&tokens.access_token).await?;
+                                Ok::<_, crate::backend::BackendError>((tokens, me))
+                            },
+                            |this, res, cx| match res {
+                                Ok((tokens, me)) => this.signed_in(tokens, me, cx),
+                                Err(e) => this.fail(e, cx),
+                            },
+                        )
+                        .detach();
                     })),
             )
             .child(auth_footer(cx))

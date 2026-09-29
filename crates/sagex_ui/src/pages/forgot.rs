@@ -37,20 +37,47 @@ impl AuthApp {
             .child(
                 Button::new("forgot-submit")
                     .primary()
-                    .label("Send reset code")
+                    .label(if self.busy {
+                        "Sending…"
+                    } else {
+                        "Send reset code"
+                    })
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        let email = this.forgot_email.read(cx).value();
+                        let email = this.forgot_email.read(cx).value().trim().to_string();
                         window.prevent_default();
-                        if email.trim().is_empty() {
+                        if email.is_empty() {
                             this.notice = Some("Enter your account email.".to_string());
                             cx.notify();
                             return;
                         }
-                        println!("forgot submit email={}", email);
-                        this.navigate(AuthPage::Otp, cx);
-                        this.notice = Some(format!("Code sent to {}", email.trim()));
+                        if this.busy {
+                            return;
+                        }
+                        this.busy = true;
+                        this.notice = None;
                         cx.notify();
+                        let api = this.api.clone();
+                        crate::backend::request(
+                            cx,
+                            async move {
+                                api.forgot_password(&email).await?;
+                                Ok::<_, crate::backend::BackendError>(email)
+                            },
+                            |this, res, cx| match res {
+                                Ok(email) => {
+                                    this.busy = false;
+                                    this.pending_email = email.clone();
+                                    this.pending_purpose = "reset".to_string();
+                                    this.navigate(AuthPage::Otp, cx);
+                                    this.notice =
+                                        Some("If the email exists, a code was sent.".to_string());
+                                    cx.notify();
+                                }
+                                Err(e) => this.fail(e, cx),
+                            },
+                        )
+                        .detach();
                     })),
             )
             .child(back_to_login(cx))

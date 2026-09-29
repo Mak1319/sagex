@@ -11,7 +11,16 @@ use gpui_component::{
     v_flex,
 };
 
+use crate::backend::{ApiClient, SessionStore, StoredSession};
 use crate::component::ThemeToggle;
+
+/// Emitted by `AuthApp` when a flow completes with a live session.
+#[derive(Debug, Clone)]
+pub enum AuthEvent {
+    SignedIn(StoredSession),
+}
+
+impl gpui::EventEmitter<AuthEvent> for AuthApp {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum AuthPage {
@@ -41,6 +50,14 @@ pub struct AuthApp {
     pub theme_mode: crate::component::ThemeChoice,
     pub notice: Option<String>,
     pub(crate) appearance_sub: Option<Subscription>,
+    // ---- live backend wiring ----
+    pub api: ApiClient,
+    pub store: SessionStore,
+    /// email awaiting OTP + which flow it belongs to (signup|login|reset)
+    pub pending_email: String,
+    pub pending_purpose: String,
+    /// a network call is in flight; submit buttons show busy labels
+    pub busy: bool,
 }
 
 impl AuthApp {
@@ -56,6 +73,8 @@ impl AuthApp {
         otp: Entity<OtpState>,
         reset_password: Entity<InputState>,
         reset_confirm: Entity<InputState>,
+        api: ApiClient,
+        store: SessionStore,
     ) -> Self {
         Self {
             page: AuthPage::Login,
@@ -69,11 +88,44 @@ impl AuthApp {
             otp,
             reset_password,
             reset_confirm,
-            remember_me: false,
+            remember_me: true,
             theme_mode: crate::component::ThemeChoice::System,
             notice: None,
             appearance_sub: None,
+            api,
+            store,
+            pending_email: String::new(),
+            pending_purpose: "signup".to_string(),
+            busy: false,
         }
+    }
+
+    /// Build a persistable session from tokens + profile, save, and emit.
+    pub(crate) fn signed_in(
+        &mut self,
+        tokens: crate::backend::Tokens,
+        me: crate::backend::UserDto,
+        cx: &mut Context<Self>,
+    ) {
+        let sess = StoredSession {
+            access_token: tokens.access_token,
+            access_expires_at: tokens.access_expires_at,
+            refresh_token: tokens.refresh_token,
+            refresh_expires_at: tokens.refresh_expires_at,
+            user_id: me.id,
+            email: me.email,
+            saved_at: crate::backend::now_unix(),
+        };
+        self.store.set(sess.clone());
+        self.busy = false;
+        cx.emit(AuthEvent::SignedIn(sess));
+        cx.notify();
+    }
+
+    pub(crate) fn fail(&mut self, err: crate::backend::BackendError, cx: &mut Context<Self>) {
+        self.busy = false;
+        self.notice = Some(err.to_string());
+        cx.notify();
     }
 
     pub fn navigate(&mut self, page: AuthPage, cx: &mut Context<Self>) {

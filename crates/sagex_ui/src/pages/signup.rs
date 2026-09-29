@@ -55,15 +55,19 @@ impl AuthApp {
             .child(
                 Button::new("signup-submit")
                     .primary()
-                    .label("Create Account")
+                    .label(if self.busy {
+                        "Creating…"
+                    } else {
+                        "Create Account"
+                    })
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        let name = this.signup_name.read(cx).value();
-                        let email = this.signup_email.read(cx).value();
-                        let p1 = this.signup_password.read(cx).value();
-                        let p2 = this.signup_confirm.read(cx).value();
+                        let name = this.signup_name.read(cx).value().trim().to_string();
+                        let email = this.signup_email.read(cx).value().trim().to_string();
+                        let p1 = this.signup_password.read(cx).value().to_string();
+                        let p2 = this.signup_confirm.read(cx).value().to_string();
                         window.prevent_default();
-                        if name.trim().is_empty() || email.trim().is_empty() || p1.is_empty() {
+                        if name.is_empty() || email.is_empty() || p1.is_empty() {
                             this.notice = Some("Fill in name, email and password.".to_string());
                             cx.notify();
                             return;
@@ -73,11 +77,34 @@ impl AuthApp {
                             cx.notify();
                             return;
                         }
-                        println!("signup submit name={} email={}", name, email);
-                        // Email verification step.
-                        this.navigate(AuthPage::Otp, cx);
-                        this.notice = Some(format!("Code sent to {}", email.trim()));
+                        if this.busy {
+                            return;
+                        }
+                        this.busy = true;
+                        this.notice = None;
                         cx.notify();
+                        let api = this.api.clone();
+                        // signup_name doubles as the username for the API.
+                        let username = name.clone();
+                        crate::backend::request(
+                            cx,
+                            async move {
+                                api.signup(&email, &username, &p1, None).await?;
+                                Ok::<_, crate::backend::BackendError>(email)
+                            },
+                            |this, res, cx| match res {
+                                Ok(email) => {
+                                    this.busy = false;
+                                    this.pending_email = email.clone();
+                                    this.pending_purpose = "signup".to_string();
+                                    this.navigate(AuthPage::Otp, cx);
+                                    this.notice = Some(format!("Code sent to {email}"));
+                                    cx.notify();
+                                }
+                                Err(e) => this.fail(e, cx),
+                            },
+                        )
+                        .detach();
                     })),
             )
             .child(auth_footer(cx))

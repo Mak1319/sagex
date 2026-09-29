@@ -158,7 +158,11 @@ impl ChatApp {
                             });
                             this.reply_to = None;
                         }
-                        this.send_composer(window, cx);
+                        // live send: optimistic bubble + POST /rooms/:id/messages
+                        let text = this.composer.read(cx).value().trim().to_string();
+                        this.composer
+                            .update(cx, |s, cx| s.set_value("", window, cx));
+                        this.send_remote(text, cx);
                     })),
             )
     }

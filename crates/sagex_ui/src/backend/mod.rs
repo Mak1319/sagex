@@ -9,6 +9,8 @@ pub mod ca_client;
 pub mod client;
 pub mod config;
 pub mod enroll;
+pub mod forensic;
+pub mod gateway;
 pub mod identity;
 pub mod runtime;
 pub mod session;
@@ -24,6 +26,17 @@ pub use config::BackendConfig;
 // unused until those screens land, so allow the import lint here.
 #[allow(unused_imports)]
 pub use enroll::{EnrollState, EnrollStatus};
+// Forensic + gateway surface for upcoming screens; unused until wired.
+#[allow(unused_imports)]
+pub use forensic::{decrypt_and_mark, derive_receipt_watermark, file_sha256_hex};
+#[allow(unused_imports)]
+pub use forensic::{extract_leak_id, new_session_id, seal_for, verify_package};
+#[allow(unused_imports)]
+pub use forensic::{payload_sha256_hex, receipt_fields};
+#[allow(unused_imports)]
+pub use forensic::{build_record, decrypt_verified, DeviceSession, RECORD_CTX};
+#[allow(unused_imports)]
+pub use gateway::{DecryptionRecord, GatewayClient};
 #[allow(unused_imports)]
 pub use identity::CsrBody;
 pub use runtime::net_handle;

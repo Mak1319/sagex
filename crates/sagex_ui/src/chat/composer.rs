@@ -472,6 +472,7 @@ impl ChatApp {
                 t.child(ReplyBar::new(sender, color, text).on_close(cx.listener(
                     |this, _, _, cx| {
                         this.reply_to = None;
+                        this.reply_to_id = None;
                         cx.notify();
                     },
                 )))
@@ -512,22 +513,28 @@ impl ChatApp {
                                         return;
                                     }
                                     // fold an active reply quote into the sent text
-                                    if let Some((sender, text, _)) = this.reply_to.clone() {
-                                        let cur = this.composer.read(cx).value().to_string();
-                                        this.composer.update(cx, |s, cx| {
-                                            s.set_value(
-                                                format!("↩ {sender}: {text} {cur}"),
-                                                window,
-                                                cx,
-                                            )
-                                        });
-                                        this.reply_to = None;
+                                    // only for local-only chats; server rooms
+                                    // thread via reply_to id instead.
+                                    let reply_id = this.reply_to_id.clone();
+                                    if reply_id.is_none() {
+                                        if let Some((sender, text, _)) = this.reply_to.clone() {
+                                            let cur = this.composer.read(cx).value().to_string();
+                                            this.composer.update(cx, |s, cx| {
+                                                s.set_value(
+                                                    format!("↩ {sender}: {text} {cur}"),
+                                                    window,
+                                                    cx,
+                                                )
+                                            });
+                                        }
                                     }
+                                    this.reply_to = None;
+                                    this.reply_to_id = None;
                                     // live send: optimistic bubble + POST /rooms/:id/messages
                                     let text = this.composer.read(cx).value().trim().to_string();
                                     this.composer
                                         .update(cx, |s, cx| s.set_value("", window, cx));
-                                    this.send_remote(text, cx);
+                                    this.send_remote(text, reply_id, cx);
                                 }))
                                 .on_mic_down({
                                     let view = cx.entity();

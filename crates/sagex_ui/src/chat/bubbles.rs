@@ -2,12 +2,12 @@
 //!
 //! Layout adapter over `component::bubble`; message-type mapping lives here.
 
-use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::FluentBuilder, px};
+use gpui::{Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px};
 use gpui_component::{ActiveTheme, Sizable, Size};
 
 use super::{
     ChatApp,
-    model::{Message, MessageKind, sender_color, sender_initials},
+    model::{Message, MessageKind, SealState, sender_color, sender_initials},
 };
 use crate::component::{
     Avatar, BubbleContent, ChatBubble, LinkCard, OUTGOING_DARK, OUTGOING_LIGHT, ReactionChips,
@@ -176,8 +176,59 @@ impl ChatApp {
                         m.reactions.clone(),
                         self.starred.contains(&m.id),
                         m.mine,
-                    )),
+                    ))
+                    .child(Self::seal_footer(cx, m)),
             )
+    }
+
+    /// Watermark-registration proof line under the bubble (fail-closed
+    /// receive pipeline). `None` seal renders nothing.
+    fn seal_footer(cx: &mut Context<ChatApp>, m: &Message) -> impl IntoElement {
+        let Some(seal) = m.seal.clone() else {
+            return div().into_any_element();
+        };
+        let muted = cx.theme().muted_foreground;
+        match seal {
+            SealState::Pending => div()
+                .text_xs()
+                .text_color(muted)
+                .child("⏳ Verifying watermark…")
+                .into_any_element(),
+            SealState::Done {
+                watermark,
+                status,
+                block_index,
+            } => {
+                let proof = match block_index {
+                    Some(i) => format!("🔖 {watermark} • {status} • block #{i}"),
+                    None => format!("🔖 {watermark} • {status}"),
+                };
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(proof)
+                    .into_any_element()
+            }
+            SealState::Blocked { reason } => {
+                let mid = m.id;
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(div().text_xs().text_color(muted).child(reason))
+                    .child(
+                        div()
+                            .id(("seal-retry", mid))
+                            .text_xs()
+                            .cursor_pointer()
+                            .child("↻ Retry registration")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.retry_sealed(mid, cx);
+                            })),
+                    )
+                    .into_any_element()
+            }
+        }
     }
 
     fn bubble_for(

@@ -38,6 +38,9 @@ pub enum WsEvent {
         message_id: Option<String>,
         sender_id: String,
         body: String,
+        kind: Option<String>,
+        metadata: Option<serde_json::Value>,
+        reply_to: Option<String>,
     },
     Presence {
         room_id: String,
@@ -73,6 +76,9 @@ fn parse_event(text: &str) -> Option<WsEvent> {
             message_id: s("message_id"),
             sender_id: s("sender_id").unwrap_or_default(),
             body: s("body").unwrap_or_default(),
+            kind: s("kind"),
+            metadata: v.get("metadata").cloned(),
+            reply_to: s("reply_to"),
         },
         "presence" => WsEvent::Presence {
             room_id: s("room_id").unwrap_or_default(),

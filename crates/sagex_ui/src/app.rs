@@ -124,6 +124,9 @@ impl AuthApp {
             email: me.email,
             saved_at: crate::backend::now_unix(),
         };
+        // Stash the fresh access token for one enrollment run (self-service
+        // permit + CSR triple-bind). Consumed per run, never persisted.
+        self.enroll.set_token(sess.access_token.clone());
         self.store.set(sess.clone());
         // One-way upgrade: seal a legacy plaintext session.json into the
         // encrypted vault (needs the stashed login password; no-op for

@@ -53,6 +53,7 @@ pub struct AppShell {
     chat: Option<Entity<ChatApp>>,
     api: ApiClient,
     store: SessionStore,
+    cfg: BackendConfig,
     max_age_days: i64,
     search: Option<Entity<InputState>>,
     composer: Option<Entity<InputState>>,
@@ -103,6 +104,7 @@ impl AppShell {
             api,
             store,
             max_age_days: cfg.session_max_age_days,
+            cfg,
             search: Some(inputs.search),
             composer: Some(inputs.composer),
             emoji_search: Some(inputs.emoji_search),
@@ -174,6 +176,7 @@ impl AppShell {
     fn enter_chat(&mut self, sess: StoredSession, cx: &mut Context<Self>) {
         let api = self.api.clone();
         let store = self.store.clone();
+        let cfg = self.cfg.clone();
         let chat = cx.new(|_| {
             ChatApp::new(
                 self.search.take().expect("chat inputs consumed twice"),
@@ -193,6 +196,7 @@ impl AppShell {
                 self.poll.take().expect("chat inputs consumed twice"),
                 api,
                 store,
+                cfg,
             )
         });
         cx.subscribe(&chat, |this, _, ev: &ChatEvent, cx| match ev {

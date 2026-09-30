@@ -69,8 +69,10 @@ impl ChatApp {
                     my_vote: None,
                 },
                 reactions: vec![],
+                reply_to: None,
                 ticks: MessageStatus::Sent,
                 deleted: false,
+                seal: None,
                 server_id: None,
                 attachment: None,
             });

@@ -10,9 +10,10 @@ use tokio::sync::mpsc as tmpsc;
 use super::{
     ChatApp, ChatEvent, ConnStatus,
     model::{
-        Chat, ChatKind, Message, MessageKind, MessageStatus, extract_link, sender_color,
-        sender_initials,
+        Chat, ChatKind, Message, MessageKind, MessageStatus, SealState, extract_link,
+        sender_color, sender_initials,
     },
+    sealed::{SealedDone, StoredSeal, detect_sealed, run_sealed_receive},
 };
 use crate::backend::{
     ApiClient, ApiResult, BackendError, MessageDto, RoomDto, StoredSession, WsCmd, WsEvent,
@@ -364,10 +365,10 @@ impl ChatApp {
         self.authed(
             cx,
             move |api, access| async move { api.history(&access, &hex, 30, None).await },
-            move |this, res: ApiResult<Vec<MessageDto>>, cx| match res {
+            move             |this, res: ApiResult<Vec<MessageDto>>, cx| match res {
                 Ok(msgs) => {
                     for m in msgs {
-                        this.insert_server_msg(&m);
+                        this.insert_server_msg(&m, cx);
                     }
                     cx.notify();
                 }
@@ -383,13 +384,19 @@ impl ChatApp {
         );
     }
 
-    fn insert_server_msg(&mut self, m: &MessageDto) {
+    fn insert_server_msg(&mut self, m: &MessageDto, cx: &mut Context<Self>) {
         if !self.known_msgs.insert(m.id.clone()) {
             return; // already shown (e.g. own POST echo over WS)
         }
         let Some((&local, _)) = self.room_server.iter().find(|(_, h)| *h == &m.room_id) else {
             return;
         };
+        // Watermark-flagged content: placeholder + fail-closed pipeline
+        // (verify → register → decrypt). Plaintext never renders here.
+        if let Some(hit) = detect_sealed(m) {
+            self.insert_sealed(m, local, hit.sealed, hit.sender_dsa_pub, cx);
+            return;
+        }
         let mine = m.sender_id == self.my_id();
         let sender = if mine {
             self.my_name()
@@ -407,14 +414,20 @@ impl ChatApp {
                 time: short_time(&m.created_at),
                 mine,
                 date: "Today".to_string(),
-                kind: MessageKind::Text,
-                reactions: vec![],
+                kind: kind_from_dto(m),
+                reactions: m
+                    .reactions
+                    .iter()
+                    .map(|r| r.emoji.clone())
+                    .collect(),
+                reply_to: m.reply_to.clone(),
                 ticks: if mine {
                     MessageStatus::Read
                 } else {
                     MessageStatus::Sent
                 },
-                deleted: false,
+                deleted: m.deleted,
+                seal: None,
                 server_id: Some(m.id.clone()),
                 attachment: None,
             });
@@ -425,9 +438,164 @@ impl ChatApp {
         }
     }
 
+    /// Insert a `⏳ Verifying watermark…` placeholder and kick off the
+    /// fail-closed receive pipeline on the network runtime.
+    fn insert_sealed(
+        &mut self,
+        m: &MessageDto,
+        local: usize,
+        sealed: Vec<u8>,
+        sender_pub: Option<Vec<u8>>,
+        cx: &mut Context<Self>,
+    ) {
+        let mine = m.sender_id == self.my_id();
+        let sender = if mine {
+            self.my_name()
+        } else {
+            self.display_name_of(&m.sender_id)
+        };
+        let local_id = self.next_msg;
+        self.next_msg += 1;
+        if let Some(c) = self.chats.iter_mut().find(|c| c.id == local) {
+            c.messages.push(Message {
+                id: local_id,
+                sender,
+                link: None,
+                text: "⏳ Verifying watermark…".to_string(),
+                time: short_time(&m.created_at),
+                mine,
+                date: "Today".to_string(),
+                kind: MessageKind::Text,
+                reactions: vec![],
+                reply_to: m.reply_to.clone(),
+                ticks: MessageStatus::Sent,
+                deleted: false,
+                seal: Some(SealState::Pending),
+                server_id: Some(m.id.clone()),
+                attachment: None,
+            });
+            c.last_time = short_time(&m.created_at);
+            if local != self.active_id {
+                c.unread += 1;
+            }
+        }
+        self.sealed_retry.insert(
+            local_id,
+            StoredSeal {
+                server_id: m.id.clone(),
+                sealed,
+                sender_pub,
+            },
+        );
+        self.start_sealed_flow(local_id, cx);
+    }
+
+    /// Explicit user retry for a blocked sealed message. The gateway dedupes
+    /// on `watermark`, so resubmission never double-commits.
+    pub fn retry_sealed(&mut self, local_id: usize, cx: &mut Context<Self>) {
+        if !self.sealed_retry.contains_key(&local_id) {
+            return;
+        }
+        if let Some(msg) = self.find_msg_mut(local_id) {
+            msg.seal = Some(SealState::Pending);
+            msg.text = "⏳ Verifying watermark…".to_string();
+            msg.link = None;
+        }
+        cx.notify();
+        self.start_sealed_flow(local_id, cx);
+    }
+
+    /// Run permit → register → decrypt for a retained sealed payload with a
+    /// guaranteed-fresh access token.
+    fn start_sealed_flow(&mut self, local_id: usize, cx: &mut Context<Self>) {
+        let Some(stored) = self.sealed_retry.get(&local_id).cloned() else {
+            return;
+        };
+        let username = self.my_username();
+        if username.is_empty() {
+            self.apply_sealed_result(
+                local_id,
+                Err("Sign in to verify watermarked content.".to_string()),
+                cx,
+            );
+            return;
+        }
+        let gateway = self.gateway.clone();
+        let ca = self.ca.clone();
+        let device = self.device.clone();
+        let auth_server = self.auth_server.clone();
+        self.ensure_access(
+            cx,
+            Box::new(move |this, cx| {
+                let access = this.access_token();
+                request(
+                    cx,
+                    async move {
+                        run_sealed_receive(
+                            gateway,
+                            ca,
+                            access,
+                            device,
+                            username,
+                            auth_server,
+                            stored.server_id.clone(),
+                            stored.sealed.clone(),
+                            stored.sender_pub.clone(),
+                        )
+                        .await
+                    },
+                    move |this, res: Result<SealedDone, String>, cx| {
+                        this.apply_sealed_result(local_id, res, cx);
+                    },
+                )
+                .detach();
+            }),
+        );
+    }
+
+    /// Apply the pipeline outcome on the GPUI thread: decrypted text + proof
+    /// badge, or a blocked tombstone (plaintext never shown on failure).
+    fn apply_sealed_result(
+        &mut self,
+        local_id: usize,
+        res: Result<SealedDone, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match res {
+            Ok(done) => {
+                self.sealed_retry.remove(&local_id);
+                if let Some(msg) = self.find_msg_mut(local_id) {
+                    msg.link = extract_link(&done.text);
+                    msg.text = done.text.clone();
+                    msg.time = "now".to_string();
+                    msg.seal = Some(SealState::Done {
+                        watermark: done.watermark,
+                        status: done.status,
+                        block_index: done.block_index,
+                    });
+                    msg.ticks = MessageStatus::Read;
+                }
+                cx.notify();
+            }
+            Err(reason) => {
+                if let Some(msg) = self.find_msg_mut(local_id) {
+                    msg.text = "🚫 Watermark blocked — content withheld.".to_string();
+                    msg.link = None;
+                    msg.seal = Some(SealState::Blocked { reason });
+                }
+                cx.notify();
+            }
+        }
+    }
+
     // ---------- send ----------
     /// Optimistic send: local bubble now, POST in background, notice on error.
-    pub fn send_remote(&mut self, text: String, cx: &mut Context<Self>) {
+    pub fn send_remote(
+        &mut self,
+        text: String,
+        reply_to: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let id = self.active_id;
         let Some(hex) = self.room_server.get(&id).cloned() else {
             // local-only chat: keep the mock behavior
@@ -449,8 +617,10 @@ impl ChatApp {
                 date: "Today".to_string(),
                 kind: MessageKind::Text,
                 reactions: vec![],
+                reply_to: reply_to.clone(),
                 ticks: MessageStatus::Sent,
                 deleted: false,
+                seal: None,
                 server_id: None,
                 attachment: None,
             });
@@ -459,7 +629,10 @@ impl ChatApp {
         cx.notify();
         self.authed(
             cx,
-            move |api, access| async move { api.post_message(&access, &hex, &text).await },
+            move |api, access| async move {
+                api.post_message(&access, &hex, &text, None, None, reply_to.as_deref())
+                    .await
+            },
             move |this, res: ApiResult<MessageDto>, cx| match res {
                 Ok(m) => {
                     this.known_msgs.insert(m.id.clone());
@@ -551,6 +724,9 @@ impl ChatApp {
                 message_id,
                 sender_id,
                 body,
+                kind,
+                metadata,
+                reply_to,
             } => {
                 if !self.room_server.values().any(|h| h == &room_id) {
                     // message for a room we haven't listed (e.g. added
@@ -570,8 +746,16 @@ impl ChatApp {
                     sender_id,
                     body,
                     created_at: String::new(),
+                    kind: kind.unwrap_or_else(|| "text".to_string()),
+                    metadata,
+                    reply_to,
+                    edited_at: None,
+                    deleted: false,
+                    reactions: vec![],
+                    poll: None,
+                    pinned: false,
                 };
-                self.insert_server_msg(&m);
+                self.insert_server_msg(&m, cx);
                 cx.notify();
             }
         }
@@ -831,7 +1015,7 @@ impl ChatApp {
         }
         self.authed(
             cx,
-            move |api, access| async move { api.update_me(&access, None, Some(&name)).await },
+            move |api, access| async move { api.update_me(&access, None, Some(&name), None, None).await },
             |this, res: ApiResult<crate::backend::UserDto>, cx| match res {
                 Ok(me) => {
                     this.me = Some(me);
@@ -856,4 +1040,66 @@ fn short_time(rfc: &str) -> String {
         return "now".to_string();
     }
     rfc.chars().take(16).collect::<String>().replace('T', " ")
+}
+
+fn meta_str(m: &MessageDto, key: &str) -> String {
+    m.metadata
+        .as_ref()
+        .and_then(|v| v.get(key))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Map a server message kind + metadata onto the local bubble variant.
+/// Unknown kinds and malformed metadata degrade to Text (body preserved).
+fn kind_from_dto(m: &MessageDto) -> MessageKind {
+    match m.kind.as_str() {
+        "image" => MessageKind::Image {
+            caption: meta_str(m, "caption"),
+        },
+        "voice" => MessageKind::Voice {
+            duration: {
+                let d = meta_str(m, "duration");
+                if d.is_empty() {
+                    "0:00".to_string()
+                } else {
+                    d
+                }
+            },
+            bars: vec![],
+        },
+        "document" | "video" => MessageKind::Document {
+            name: {
+                let n = meta_str(m, "filename");
+                if n.is_empty() {
+                    meta_str(m, "name")
+                } else {
+                    n
+                }
+            },
+            size: meta_str(m, "size"),
+        },
+        "contact" => MessageKind::Contact {
+            name: meta_str(m, "name"),
+            phone: meta_str(m, "phone"),
+        },
+        "poll" => match &m.poll {
+            Some(p) => MessageKind::Poll {
+                question: meta_str(m, "question"),
+                options: p.options.iter().map(|o| o.text.clone()).collect(),
+                votes: p.options.iter().map(|o| o.votes).collect(),
+                my_vote: p.my_vote.map(|v| v as usize),
+            },
+            None => MessageKind::Text,
+        },
+        "event" => MessageKind::Event {
+            title: meta_str(m, "title"),
+            when: meta_str(m, "when"),
+        },
+        "sticker" => MessageKind::Sticker {
+            glyph: meta_str(m, "glyph"),
+        },
+        _ => MessageKind::Text,
+    }
 }

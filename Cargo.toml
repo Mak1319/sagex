@@ -15,5 +15,6 @@ members = [
     "crates/sagex-gateway",
     "crates/sagex-ledger-ui",
     "crates/office-watermark-ui",
+    "crates/sagex-forensic",
 ]
 resolver = "3"

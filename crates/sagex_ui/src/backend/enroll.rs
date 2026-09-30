@@ -45,6 +45,7 @@ pub struct EnrollState {
     ca: CaClient,
     pending_password: Option<Zeroizing<Vec<u8>>>,
     pending_permit: Option<String>,
+    pending_token: Option<String>,
     active_user: Option<String>,
 }
 
@@ -56,6 +57,7 @@ impl EnrollState {
             ca,
             pending_password: None,
             pending_permit: None,
+            pending_token: None,
             active_user: None,
         }
     }
@@ -84,9 +86,17 @@ impl EnrollState {
         }
     }
 
+    /// Stash the fresh chatsrv access token for one enrollment run, so the
+    /// CA triple-bind and self-service permit issuance can use it. Called
+    /// alongside `set_password` at sign-in; consumed per run.
+    pub fn set_token(&mut self, access_token: String) {
+        self.pending_token = Some(access_token);
+    }
+
     pub fn clear_secrets(&mut self) {
         self.pending_password = None;
         self.pending_permit = None;
+        self.pending_token = None;
     }
 
     /// Post-sign-in reconciliation (sync, non-blocking): reflect what the
@@ -159,12 +169,25 @@ impl EnrollState {
                 .store_identity(&prv, &publ)
                 .map_err(|e| e.to_string())?;
         }
+        // Permit: self-service via the stashed chatsrv token first (the CA
+        // binds sub to the verified username — callers can never choose
+        // another subject); pasted operator permit as fallback.
+        let token = self.pending_token.take();
         let permit = match self.pending_permit.take() {
             Some(p) if !p.is_empty() => p,
-            _ => {
-                self.status = EnrollStatus::NeedsPermit;
-                return Err("A permit from your operator is required.".into());
-            }
+            _ => match token.as_deref() {
+                Some(t) => {
+                    let p = self.ca.request_permit(t).await.map_err(|e| e.to_string())?;
+                    if p.sub != username {
+                        return Err("CA issued a permit for another identity.".into());
+                    }
+                    p.permit
+                }
+                None => {
+                    self.status = EnrollStatus::NeedsPermit;
+                    return Err("Sign in again or paste an operator permit.".into());
+                }
+            },
         };
         // Reload for an owned encapsulation (mirrors the server flow).
         let prv = self.vault.load_prv().map_err(|e| map_vault_err(e))?;
@@ -183,7 +206,7 @@ impl EnrollState {
         .map_err(|e| e.to_string())?;
         let issued = self
             .ca
-            .submit_csr(&permit, &csr)
+            .submit_csr(&permit, &csr, token.as_deref())
             .await
             .map_err(|e| e.to_string())?;
         if issued.identity != username {

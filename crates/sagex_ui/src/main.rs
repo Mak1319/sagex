@@ -28,10 +28,13 @@ fn main() {
 
             // Backend wiring: server URL + 30-day session window come from
             // root `.env` (SAGEX_SERVER_URL / SAGEX_SESSION_MAX_AGE_DAYS).
+            // Gateway + CA URLs ride the same config (SAGEX_GATEWAY_URL /
+            // SAGEX_CA_URL) for watermark registration.
             let cfg = BackendConfig::load();
             let api = ApiClient::new(&cfg.server_url);
             let store = SessionStore::new(true);
             let max_age = cfg.session_max_age_days;
+            let chat_cfg = cfg.clone();
 
             let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
             cx.open_window(
@@ -75,6 +78,7 @@ fn main() {
                             poll,
                             api.clone(),
                             store.clone(),
+                            chat_cfg.clone(),
                         )
                     });
                     view.update(cx, |this, cx| this.boot_demo(max_age, cx));

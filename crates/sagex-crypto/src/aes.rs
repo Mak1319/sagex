@@ -28,6 +28,36 @@ pub struct KeyEncapsulation {
 }
 
 impl AESHandler {
+    /// Raw AES-256-GCM encrypt with an explicit key/nonce (no KDF).
+    /// For message/file DEKs; password-based flows keep using
+    /// [`AESHandler::encrypt_private_key`].
+    pub fn encrypt_raw(
+        key: &[u8; 32],
+        nonce_bytes: &[u8; NONCE_LEN],
+        plaintext: &[u8],
+    ) -> SageXResult<Vec<u8>> {
+        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key)
+            .map_err(|_| SageXCryptoError::AESCreationError)?;
+        let nonce = Nonce::from(*nonce_bytes);
+        cipher
+            .encrypt(&nonce, plaintext)
+            .map_err(|_| SageXCryptoError::AESEncryptionError)
+    }
+
+    /// Raw AES-256-GCM decrypt with an explicit key/nonce.
+    pub fn decrypt_raw(
+        key: &[u8; 32],
+        nonce_bytes: &[u8; NONCE_LEN],
+        ciphertext: &[u8],
+    ) -> SageXResult<Vec<u8>> {
+        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key)
+            .map_err(|_| SageXCryptoError::AESCreationError)?;
+        let nonce = Nonce::from(*nonce_bytes);
+        cipher
+            .decrypt(&nonce, ciphertext)
+            .map_err(|_| AESDecryptionError)
+    }
+
     pub fn encrypt_private_key(key: &[u8], password: &[u8]) -> SageXResult<KeyEncapsulation> {
         let mut salt = [0u8; SALT_LEN];
         let mut nonce_bytes = [0u8; NONCE_LEN];

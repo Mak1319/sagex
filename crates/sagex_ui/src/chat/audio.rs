@@ -539,8 +539,10 @@ impl ChatApp {
                     bars: clip.bars.clone(),
                 },
                 reactions: vec![],
+                reply_to: None,
                 ticks: MessageStatus::Sent,
                 deleted: false,
+                seal: None,
                 server_id: None,
                 attachment: Some(Attachment {
                     path: clip.path,

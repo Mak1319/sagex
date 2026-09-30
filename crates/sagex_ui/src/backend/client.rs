@@ -276,6 +276,8 @@ impl ApiClient {
         access: &str,
         username: Option<&str>,
         display_name: Option<&str>,
+        status: Option<&str>,
+        avatar_key: Option<&str>,
     ) -> ApiResult<UserDto> {
         let res = self
             .inner
@@ -284,6 +286,8 @@ impl ApiClient {
             .json(&UpdateMeReq {
                 username: username.map(|s| s.to_string()),
                 display_name: display_name.map(|s| s.to_string()),
+                status: status.map(|s| s.to_string()),
+                avatar_key: avatar_key.map(|s| s.to_string()),
             })
             .send()
             .await?;
@@ -416,6 +420,9 @@ impl ApiClient {
         access: &str,
         room: &str,
         body: &str,
+        kind: Option<&str>,
+        metadata: Option<serde_json::Value>,
+        reply_to: Option<&str>,
     ) -> ApiResult<MessageDto> {
         let res = self
             .inner
@@ -423,6 +430,9 @@ impl ApiClient {
             .bearer_auth(access)
             .json(&PostMessageReq {
                 body: body.to_string(),
+                kind: kind.map(str::to_string),
+                metadata,
+                reply_to: reply_to.map(str::to_string),
             })
             .send()
             .await?;

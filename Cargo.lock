@@ -7258,6 +7258,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sagex-forensic"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "binrw",
+ "hmac 0.13.0",
+ "office-watermark",
+ "rand_core 0.6.4",
+ "sagex-crypto",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "sagex-format"
 version = "0.1.0"
 dependencies = [
@@ -7364,6 +7381,7 @@ dependencies = [
  "rustpq",
  "sagex-auth",
  "sagex-crypto",
+ "sagex-forensic",
  "sagex-format",
  "serde",
  "serde_json",

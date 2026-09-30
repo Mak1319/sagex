@@ -77,6 +77,26 @@ pub enum MessageStatus {
     Read,
 }
 
+/// Watermark-registration state for a received sealed message (fail-closed
+/// receive pipeline). `None` on `Message.seal` = ordinary message.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub enum SealState {
+    /// Placeholder inserted while verify → register → decrypt runs.
+    #[default]
+    Pending,
+    /// Gate passed (201 committed / 202 queued / duplicate) and content
+    /// decrypted + marked.
+    Done {
+        watermark: String,
+        /// "committed" | "queued" (+ "duplicate" detail kept in text).
+        status: String,
+        block_index: Option<u64>,
+    },
+    /// Gate failed or device locked: plaintext never shown. `retry` re-runs
+    /// permit → register for the same sealed bytes (idempotent).
+    Blocked { reason: String },
+}
+
 #[derive(Clone)]
 pub struct Message {
     pub id: usize,
@@ -96,8 +116,12 @@ pub struct Message {
     pub kind: MessageKind,
     /// Emoji reactions toggled from the message menu.
     pub reactions: Vec<String>,
+    /// Server message id this message replies to (None = top-level).
+    pub reply_to: Option<String>,
     /// Deleted messages stay as a "message deleted" record (WhatsApp style).
     pub deleted: bool,
+    /// Watermark-registration state (None = ordinary message).
+    pub seal: Option<SealState>,
     /// Read-receipt ticks (only shown on outgoing bubbles).
     pub ticks: MessageStatus,
 }
@@ -162,6 +186,10 @@ impl Chat {
             .map(|m| {
                 if m.deleted {
                     "🚫 This message was deleted".to_string()
+                } else if let Some(SealState::Blocked { .. }) = m.seal {
+                    "🚫 Blocked: watermark not registered".to_string()
+                } else if let Some(SealState::Pending) = m.seal {
+                    "⏳ Verifying watermark…".to_string()
                 } else if m.mine {
                     format!("You: {}", m.text)
                 } else if self.kind == ChatKind::Group {

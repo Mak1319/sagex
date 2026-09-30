@@ -15,6 +15,15 @@ pub struct CaClient {
 struct CsrRequest<'a> {
     permit: &'a str,
     csr: &'a super::identity::CsrBody,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chatsrv_token: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Permit {
+    pub permit: String,
+    pub sub: String,
+    pub expires_at: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,16 +86,38 @@ impl CaClient {
         }
     }
 
-    /// Submit a CSR with a pasted (operator-issued) permit.
+    /// Request a self-service user permit using the chatsrv access token.
+    /// The CA verifies the token and binds `sub` to its username — callers
+    /// can never choose another subject. Requires the token, not a password.
+    pub async fn request_permit(&self, access_token: &str) -> ApiResult<Permit> {
+        let res = self
+            .inner
+            .post(self.url("/v1/permits"))
+            .bearer_auth(access_token)
+            .send()
+            .await?;
+        if res.status().is_success() {
+            return res.json().await.map_err(BackendError::from);
+        }
+        Err(Self::err_of(res.status(), res).await)
+    }
+
+    /// Submit a CSR with a permit. Pass the chatsrv access token when
+    /// available so the CA triple-binds identity (required in strict mode).
     pub async fn submit_csr(
         &self,
         permit: &str,
         csr: &super::identity::CsrBody,
+        chatsrv_token: Option<&str>,
     ) -> ApiResult<CertIssued> {
         let res = self
             .inner
             .post(self.url("/v1/csr"))
-            .json(&CsrRequest { permit, csr })
+            .json(&CsrRequest {
+                permit,
+                csr,
+                chatsrv_token,
+            })
             .send()
             .await?;
         if res.status().is_success() {
@@ -128,5 +159,48 @@ impl CaClient {
             return res.json().await.map_err(BackendError::from);
         }
         Err(Self::err_of(res.status(), res).await)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csr_request_shape_matches_server() {
+        fn body() -> crate::backend::identity::CsrBody {
+            crate::backend::identity::CsrBody {
+                identity: "alice".into(),
+                key_kem_b64: "k".into(),
+                key_dsa_b64: "d".into(),
+                self_sig_b64: "s".into(),
+            }
+        }
+        // chatsrv_token present -> triple-bind path.
+        let v = serde_json::to_value(&CsrRequest {
+            permit: "p".into(),
+            csr: &body(),
+            chatsrv_token: Some("t".into()),
+        })
+        .unwrap();
+        assert_eq!(v["chatsrv_token"], "t");
+        assert_eq!(v["csr"]["identity"], "alice");
+        // Absent -> key omitted entirely (legacy permit+PoP path).
+        let v = serde_json::to_value(&CsrRequest {
+            permit: "p".into(),
+            csr: &body(),
+            chatsrv_token: None,
+        })
+        .unwrap();
+        assert!(v.get("chatsrv_token").is_none());
+    }
+
+    #[test]
+    fn permit_response_shape() {
+        let v: Permit = serde_json::from_value(serde_json::json!({
+            "permit": "p", "sub": "alice", "expires_at": 123,
+        }))
+        .unwrap();
+        assert_eq!(v.sub, "alice");
     }
 }

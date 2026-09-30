@@ -35,6 +35,8 @@ impl ChatApp {
             email: "…".into(),
             username: "…".into(),
             display_name: None,
+            status: None,
+            avatar_key: None,
             is_verified: false,
             created_at: String::new(),
         });

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 pub const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:8080";
 pub const DEFAULT_CA_URL: &str = "http://127.0.0.1:8082";
+pub const DEFAULT_GATEWAY_URL: &str = "http://127.0.0.1:8081";
 pub const DEFAULT_SESSION_MAX_AGE_DAYS: i64 = 30;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,8 @@ pub struct BackendConfig {
     pub server_url: String,
     /// Certificate authority base URL (CSR enroll, cert fetch/verify).
     pub ca_url: String,
+    /// Registration gateway base URL (POST /register watermark intake).
+    pub gateway_url: String,
     /// Max age (days) of a persisted refresh session. Mirrors the server's
     /// `REFRESH_TOKEN_TTL_SECS` (default 30d). Older sessions are discarded
     /// and the app opens auth-gated.
@@ -23,6 +26,7 @@ pub struct BackendConfig {
 fn load_root_dotenv() {
     if std::env::var("SAGEX_SERVER_URL").is_ok()
         && std::env::var("SAGEX_CA_URL").is_ok()
+        && std::env::var("SAGEX_GATEWAY_URL").is_ok()
         && std::env::var("SAGEX_SESSION_MAX_AGE_DAYS").is_ok()
     {
         return;
@@ -57,9 +61,15 @@ impl BackendConfig {
             .map(|s| s.trim().trim_end_matches('/').to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| DEFAULT_CA_URL.to_string());
+        let gateway_url = std::env::var("SAGEX_GATEWAY_URL")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_GATEWAY_URL.to_string());
         Self {
             server_url,
             ca_url,
+            gateway_url,
             session_max_age_days: session_max_age_days.max(1),
         }
     }
@@ -76,10 +86,12 @@ mod tests {
         let cfg = BackendConfig {
             server_url: DEFAULT_SERVER_URL.to_string(),
             ca_url: DEFAULT_CA_URL.to_string(),
+            gateway_url: DEFAULT_GATEWAY_URL.to_string(),
             session_max_age_days: DEFAULT_SESSION_MAX_AGE_DAYS,
         };
         assert_eq!(cfg.server_url, "http://127.0.0.1:8080");
         assert_eq!(cfg.ca_url, "http://127.0.0.1:8082");
+        assert_eq!(cfg.gateway_url, "http://127.0.0.1:8081");
         assert_eq!(cfg.session_max_age_days, 30);
     }
 }

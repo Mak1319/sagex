@@ -330,6 +330,8 @@ impl ChatApp {
                 // reply state drives the preview bar above the composer
                 let clean = text.replace(['\n', '\r'], " ");
                 self.reply_to = Some((name.clone(), clean, sender_color(&sender)));
+                // server id for real threading (None on local-only messages)
+                self.reply_to_id = self.find_msg(mid).and_then(|m| m.server_id);
                 if tag == 2 {
                     self.notice = Some(format!("Private reply to {name}"));
                 }

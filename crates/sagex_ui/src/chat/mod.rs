@@ -11,6 +11,7 @@ pub mod model;
 pub mod panels;
 pub mod polls;
 pub mod rail;
+pub mod sealed;
 #[allow(dead_code)]
 pub mod seed;
 pub mod state;
@@ -29,6 +30,8 @@ use gpui_component::{ActiveTheme, input::InputState};
 use tokio::sync::mpsc as tmpsc;
 
 use crate::backend::{ApiClient, SessionStore, StoredSession, UserDto, WsCmd};
+use crate::backend::{CaClient, DeviceSession, GatewayClient, Vault};
+use crate::backend::BackendConfig;
 
 use model::{Chat, ChatFilter};
 
@@ -84,6 +87,8 @@ pub struct ChatApp {
     msg_menu: Option<usize>,
     msg_menu_at: Option<(f32, bool)>,
     reply_to: Option<(String, String, u32)>,
+    /// Server message id for the active reply quote (None = local-only).
+    reply_to_id: Option<String>,
     row_menu: Option<(usize, f32)>,
     row_menu_sub: Option<ChatMenuSub>,
     show_group_info: bool,
@@ -109,6 +114,19 @@ pub struct ChatApp {
     pub me: Option<UserDto>,
     pub conn: ConnStatus,
     pub loading: bool,
+    // ---- watermark registration (register gateway) ----
+    pub gateway: GatewayClient,
+    pub ca: CaClient,
+    pub vault: Vault,
+    /// `auth_server` label committed into each DecryptionRecord.
+    pub auth_server: String,
+    /// Unlocked device keys for per-receipt signing/decrypt. `None` until
+    /// `unlock_device(password)` succeeds; sealed messages stay blocked
+    /// (fail-closed) while locked.
+    pub device: Option<DeviceSession>,
+    /// Retained sealed payloads for explicit user retry, keyed by local
+    /// message id.
+    pub sealed_retry: HashMap<usize, sealed::StoredSeal>,
     /// local chat id -> server room hex
     pub room_server: HashMap<usize, String>,
     /// server message ids already displayed (WS dedup)
@@ -163,6 +181,7 @@ impl ChatApp {
         poll: PollInputs,
         api: ApiClient,
         store: SessionStore,
+        cfg: BackendConfig,
     ) -> Self {
         Self {
             active_id: 0,
@@ -179,6 +198,7 @@ impl ChatApp {
             msg_menu: None,
             msg_menu_at: None,
             reply_to: None,
+            reply_to_id: None,
             row_menu: None,
             row_menu_sub: None,
             show_group_info: false,
@@ -201,6 +221,12 @@ impl ChatApp {
             me: None,
             conn: ConnStatus::Connecting,
             loading: true,
+            gateway: GatewayClient::new(&cfg.gateway_url),
+            ca: CaClient::new(&cfg.ca_url),
+            vault: Vault::default(),
+            auth_server: cfg.server_url.clone(),
+            device: None,
+            sealed_retry: HashMap::new(),
             room_server: HashMap::new(),
             known_msgs: HashSet::new(),
             names: HashMap::new(),
@@ -250,6 +276,7 @@ impl ChatApp {
         poll: PollInputs,
         api: ApiClient,
         store: SessionStore,
+        cfg: BackendConfig,
     ) -> Self {
         let mut this = Self::new(
             search,
@@ -263,6 +290,7 @@ impl ChatApp {
             poll,
             api,
             store,
+            cfg,
         );
         this.chats = seed::seed_chats();
         this.active_id = 1;
@@ -294,6 +322,29 @@ impl ChatApp {
             .get(user_id)
             .cloned()
             .unwrap_or_else(|| user_id.chars().take(8).collect::<String>())
+    }
+
+    pub fn my_username(&self) -> String {
+        self.me
+            .as_ref()
+            .map(|m| m.username.clone())
+            .unwrap_or_default()
+    }
+
+    /// Unlock the device keys for the watermark receive pipeline (call after
+    /// a password sign-in, when the vault password is available). The
+    /// password stays resident (zeroized) for per-receipt record signing;
+    /// `lock_device` clears it on sign-out.
+    pub fn unlock_device(&mut self, password: &[u8], username: &str) -> Result<(), String> {
+        let dev = DeviceSession::unlock(&self.vault, password, username)?;
+        self.device = Some(dev);
+        Ok(())
+    }
+
+    /// Drop in-memory device secrets (sign-out / lock). Vault files stay.
+    pub fn lock_device(&mut self) {
+        self.device = None;
+        self.sealed_retry.clear();
     }
 }
 

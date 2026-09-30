@@ -179,8 +179,10 @@ impl ChatApp {
                     date: "Today".to_string(),
                     kind,
                     reactions: vec![],
+                    reply_to: None,
                     ticks: MessageStatus::Sent,
                     deleted: false,
+                    seal: None,
                     server_id: None,
                     attachment: Some(att),
                 });

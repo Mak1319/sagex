@@ -36,6 +36,13 @@ pub mod kem {
             Ok(result)
         }
 
+        /// Byte-level encapsulation for envelope construction: returns
+        /// `(kem_ciphertext_bytes, shared_secret_bytes)`.
+        pub fn encapsulate_bytes(key: &[u8]) -> SageXResult<(Vec<u8>, Vec<u8>)> {
+            let (ct, ss) = Self::encapsulate(key.to_vec())?;
+            Ok((ct.as_bytes().to_vec(), ss.as_bytes().to_vec()))
+        }
+
         pub fn decapsulate(
             encapsulation: KeyEncapsulation,
             password: &[u8],
@@ -49,6 +56,20 @@ pub mod kem {
                 Ciphertext::from_bytes(cipherbytes).map_err(|_| MLKEMCipherDerivationError)?;
             let result = decapsulate(&secret_key, &cipher);
             Ok(result)
+        }
+
+        /// Byte-level decapsulation with a raw secret key (no password KDF).
+        /// The caller obtains `secret_bytes` by decrypting its own `.prv`.
+        /// Returns the raw shared-secret bytes.
+        pub fn decapsulate_raw_bytes(
+            secret_bytes: &[u8],
+            cipherbytes: &[u8],
+        ) -> SageXResult<Vec<u8>> {
+            let secret_key = SecretKey::from_bytes(secret_bytes)
+                .map_err(|_| MLKEMSecretKeyDerivationFailed)?;
+            let cipher =
+                Ciphertext::from_bytes(cipherbytes).map_err(|_| MLKEMCipherDerivationError)?;
+            Ok(decapsulate(&secret_key, &cipher).as_bytes().to_vec())
         }
     }
 }
@@ -111,5 +132,17 @@ pub mod dsa {
         verify(&public_key, message, context, &signature)
             .map_err(|_| MLDSASignatureVerificationFailed)?;
         Ok(())
+    }
+
+    /// Byte-level signature verification (no rustpq types cross the API).
+    pub fn verify_signature_bytes(
+        key: &[u8],
+        message: &[u8],
+        context: &[u8],
+        signature_bytes: &[u8],
+    ) -> SageXResult<()> {
+        let signature =
+            Signature::from_bytes(signature_bytes).map_err(|_| MLDSASignatureVerificationFailed)?;
+        verify_signature(key.to_vec(), message, context, signature)
     }
 }

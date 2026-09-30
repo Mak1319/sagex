@@ -1,7 +1,0 @@
-# sagex-desk config template. Lives at:
-#   $SAGEX_HOME/config.toml, or
-#   <config_dir>/sagex-desk/config.toml  (OS config dir by default)
-# First run writes these defaults automatically; edit after that.
-server_url = "http://127.0.0.1:3001"
-request_timeout_secs = 15
-theme = "dark"

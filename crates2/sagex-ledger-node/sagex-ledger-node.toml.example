@@ -1,8 +1,0 @@
-# sagex-ledger-node example config. Copy to environments/ledger-node-N/config.toml
-node_id = "ledger-node-1"
-bind_addr = "127.0.0.1:8481"
-data_file = "chain.jsonl"
-peers = ["http://127.0.0.1:8482", "http://127.0.0.1:8483", "http://127.0.0.1:8484"]
-quorum = 3
-ca_cert_pem_path = "ca-cert.pem"
-bearer_token_env = "LEDGER_BEARER"

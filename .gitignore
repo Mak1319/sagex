@@ -22,5 +22,7 @@ crates/sagex-ledger/config/nodes/node0.toml
 crates/sagex-ledger/config/nodes/node1.toml
 crates/sagex-ledger/config/nodes/node2.toml
 crates/sagex-ledger/config/nodes/node3.toml
-# MinIO object bits (recreated by the minio service; bucket bootstrapped on boot)
-minio-data/
+# S3 object bits (recreated by the rustfs service; buckets bootstrapped on boot)
+rustfs-data/
+# compiled-service test envs (Rule §7: persist across boots, never commit)
+environments/

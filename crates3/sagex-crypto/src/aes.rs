@@ -23,6 +23,7 @@ pub struct KeyEncapsulation {
     salt: [u8; SALT_LEN],
     nonce: [u8; NONCE_LEN],
     pub public_key: Vec<u8>,
+    rounds: u32,
 }
 
 impl KeyEncapsulation {
@@ -50,11 +51,16 @@ impl KeyEncapsulation {
             public_key: T::public_key_bytes(&public_key),
             salt: salt_bytes,
             secret_key: ciphertext,
+            rounds: HASH_RND,
         })
         // private_key
     }
 
-    pub fn from_password<T>(aes_key: [u8; KEY_LEN], salt: [u8; SALT_LEN]) -> SResult<Self>
+    pub fn from_password<T>(
+        aes_key: [u8; KEY_LEN],
+        salt: [u8; SALT_LEN],
+        rounds: u32,
+    ) -> SResult<Self>
     where
         T: KeyAlgorithm,
     {
@@ -74,6 +80,7 @@ impl KeyEncapsulation {
             public_key: T::public_key_bytes(&public_key),
             salt: salt,
             secret_key: ciphertext,
+            rounds,
         })
     }
 }

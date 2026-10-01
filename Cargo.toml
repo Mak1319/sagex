@@ -18,14 +18,17 @@ members = [
     # "crates/sagex-forensic",
 
     # Crates 2 
-    "crates2/sagex-crypto",
-    "crates2/sagex-format",
-    "crates2/sagex-keygen",
-    "crates2/sagex-chatsrv",
-    "crates2/sagex-authsrv",
-    "crates2/sagex-desk",
-    "crates2/sagex-ledger-node",
-    "crates2/sagex-register-gateway",
-    "crates2/sagex-telemetry",
+    # "crates2/sagex-crypto",
+    # "crates2/sagex-format",
+    # "crates2/sagex-keygen",
+    # "crates2/sagex-chatsrv",
+    # "crates2/sagex-authsrv",
+    # "crates2/sagex-desk",
+    # "crates2/sagex-ledger-node",
+    # "crates2/sagex-register-gateway",
+    # "crates2/sagex-telemetry", "sagex-crypto",
+
+    # Crates 3 
+    "crates3/sagex-crypto", "crates3/sagex-keys",
 ]
 resolver = "3"

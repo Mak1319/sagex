@@ -1,5 +1,6 @@
 words = [
     "cipherbytes",
+    "ciphertext",
     "decapsulate",
     "kem",
     "passphase",

@@ -1,3 +1,31 @@
 [workspace]
-members = []
+members = [
+    # "crates/watermark",
+    # "crates/office-watermark",
+    # "crates/office-watermark-demo",
+    # "crates/sagex_ui",
+    # "crates/sagex-crypto",
+    # "crates/sagex_test",
+    # "crates/sagex-format",
+    # "crates/sagex-appx",
+    # "crates/sagex-certauth",
+    # "crates/sagex-auth",
+    # "crates/sagex-chatsrv",
+    # "crates/sagex-ledger",
+    # "crates/sagex-gateway",
+    # "crates/sagex-ledger-ui",
+    # "crates/office-watermark-ui",
+    # "crates/sagex-forensic",
+
+    # Crates 2 
+    "crates2/sagex-crypto",
+    "crates2/sagex-format",
+    "crates2/sagex-keygen",
+    "crates2/sagex-chatsrv",
+    "crates2/sagex-authsrv",
+    "crates2/sagex-desk",
+    "crates2/sagex-ledger-node",
+    "crates2/sagex-register-gateway",
+    "crates2/sagex-telemetry",
+]
 resolver = "3"

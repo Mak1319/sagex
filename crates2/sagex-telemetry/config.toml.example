@@ -1,0 +1,4 @@
+# sagex-telemetry example config (non-secret). Secrets go in the OS keyring, never here.
+gateway_url = "http://127.0.0.1:8490"
+request_timeout_secs = 15
+theme = "dark"

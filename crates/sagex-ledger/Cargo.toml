@@ -1,0 +1,38 @@
+[package]
+name = "sagex-ledger"
+version = "0.1.0"
+edition = "2021"
+description = "PBFT blockchain nodes server: TCP JSON-lines, SQLite, Tokio. 1 record = 1 block."
+license = "MIT"
+
+[[bin]]
+name = "sagex-ledger-node"
+path = "src/main.rs"
+
+[lib]
+name = "sagex_ledger"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+rand = "0.8"
+rand_core = "0.6"
+rustpq = { version = "0.3.0", features = ["mldsa65", "std"] }
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }

@@ -1,0 +1,15 @@
+[package]
+name = "office-watermark-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Demo CLI: encode sagex:wm watermarks into Office files, decode on demand"
+license = "MIT"
+
+[[bin]]
+name = "office-watermark-demo"
+path = "src/main.rs"
+
+[dependencies]
+office-watermark = { path = "../office-watermark" }
+clap = { version = "4.5", features = ["derive"] }
+zip = "2"

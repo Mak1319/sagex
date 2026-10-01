@@ -1,0 +1,95 @@
+<!-- Original flat illustration for the sagex splash (deep eucalyptus grove + grove-keeper).
+     viewBox 660x560, preserveAspectRatio slice so it cover-fills the art panel. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 560" preserveAspectRatio="xMidYMid slice">
+  <rect width="660" height="560" fill="#1d4a38"/>
+
+  <!-- soft background depth -->
+  <ellipse cx="70" cy="90" rx="150" ry="110" fill="#17402f"/>
+  <ellipse cx="620" cy="470" rx="170" ry="120" fill="#17402f"/>
+  <ellipse cx="600" cy="60" rx="120" ry="90" fill="#17402f"/>
+
+  <!-- distant trunks -->
+  <rect x="90" y="40" width="34" height="520" rx="16" fill="#2a5c44"/>
+  <rect x="540" y="80" width="28" height="480" rx="14" fill="#2a5c44"/>
+
+  <!-- main trunk -->
+  <rect x="368" y="0" width="66" height="560" fill="#dcebd8"/>
+  <rect x="368" y="0" width="16" height="560" fill="#c3d9bd"/>
+  <!-- branch stubs to the left -->
+  <rect x="300" y="150" width="72" height="20" rx="10" fill="#dcebd8"/>
+  <rect x="312" y="430" width="60" height="18" rx="9" fill="#dcebd8"/>
+  <!-- perch branch to the right -->
+  <rect x="430" y="368" width="170" height="18" rx="9" fill="#dcebd8"/>
+
+  <!-- leaf stems -->
+  <g stroke="#2f7d4f" stroke-width="5" stroke-linecap="round">
+    <line x1="150" y1="200" x2="240" y2="120"/>
+    <line x1="150" y1="200" x2="80" y2="130"/>
+    <line x1="150" y1="200" x2="150" y2="290"/>
+    <line x1="520" y1="180" x2="590" y2="110"/>
+    <line x1="520" y1="180" x2="450" y2="120"/>
+    <line x1="200" y1="470" x2="280" y2="410"/>
+    <line x1="200" y1="470" x2="120" y2="410"/>
+  </g>
+
+  <!-- leaf clusters -->
+  <g>
+    <ellipse cx="245" cy="105" rx="16" ry="30" fill="#3da35f" transform="rotate(-25 245 105)"/>
+    <ellipse cx="285" cy="125" rx="16" ry="30" fill="#57b877" transform="rotate(20 285 125)"/>
+    <ellipse cx="205" cy="135" rx="16" ry="30" fill="#2f7d4f" transform="rotate(-50 205 135)"/>
+    <ellipse cx="75" cy="115" rx="16" ry="30" fill="#57b877" transform="rotate(-20 75 115)"/>
+    <ellipse cx="120" cy="95" rx="16" ry="30" fill="#7ccf95" transform="rotate(15 120 95)"/>
+    <ellipse cx="150" cy="300" rx="16" ry="30" fill="#3da35f" transform="rotate(10 150 300)"/>
+    <ellipse cx="110" cy="270" rx="16" ry="30" fill="#57b877" transform="rotate(-30 110 270)"/>
+    <ellipse cx="595" cy="95" rx="16" ry="30" fill="#3da35f" transform="rotate(25 595 95)"/>
+    <ellipse cx="550" cy="120" rx="16" ry="30" fill="#7ccf95" transform="rotate(-15 550 120)"/>
+    <ellipse cx="445" cy="105" rx="16" ry="30" fill="#57b877" transform="rotate(-30 445 105)"/>
+    <ellipse cx="285" cy="400" rx="16" ry="30" fill="#57b877" transform="rotate(30 285 400)"/>
+    <ellipse cx="240" cy="430" rx="16" ry="30" fill="#3da35f" transform="rotate(-10 240 430)"/>
+    <ellipse cx="115" cy="400" rx="16" ry="30" fill="#7ccf95" transform="rotate(-25 115 400)"/>
+    <ellipse cx="160" cy="440" rx="16" ry="30" fill="#2f7d4f" transform="rotate(15 160 440)"/>
+    <ellipse cx="330" cy="90" rx="14" ry="26" fill="#cfe8c9" transform="rotate(20 330 90)"/>
+    <ellipse cx="500" cy="480" rx="14" ry="26" fill="#cfe8c9" transform="rotate(-20 500 480)"/>
+  </g>
+
+  <!-- ground foliage -->
+  <g fill="#2f7d4f">
+    <ellipse cx="60" cy="545" rx="70" ry="34"/>
+    <ellipse cx="200" cy="555" rx="80" ry="36"/>
+    <ellipse cx="470" cy="555" rx="90" ry="38"/>
+    <ellipse cx="620" cy="545" rx="70" ry="34"/>
+  </g>
+  <g fill="#57b877">
+    <ellipse cx="130" cy="540" rx="46" ry="22"/>
+    <ellipse cx="400" cy="548" rx="52" ry="24"/>
+    <ellipse cx="560" cy="540" rx="44" ry="20"/>
+  </g>
+
+  <!-- grove-keeper mascot, perched on the branch, hugging the trunk -->
+  <g>
+    <!-- tail -->
+    <ellipse cx="586" cy="352" rx="16" ry="10" fill="#8b9499"/>
+    <!-- body -->
+    <ellipse cx="516" cy="320" rx="48" ry="56" fill="#9aa3a8"/>
+    <!-- feet on the branch -->
+    <ellipse cx="484" cy="372" rx="20" ry="12" fill="#7d868c"/>
+    <ellipse cx="548" cy="372" rx="20" ry="12" fill="#7d868c"/>
+    <!-- arms reaching to the trunk -->
+    <ellipse cx="466" cy="312" rx="14" ry="30" fill="#8b9499" transform="rotate(24 466 312)"/>
+    <ellipse cx="560" cy="308" rx="13" ry="28" fill="#8b9499" transform="rotate(-18 560 308)"/>
+    <!-- ears -->
+    <circle cx="470" cy="196" r="28" fill="#8b9499"/>
+    <circle cx="470" cy="196" r="13" fill="#c9ced1"/>
+    <circle cx="546" cy="196" r="28" fill="#8b9499"/>
+    <circle cx="546" cy="196" r="13" fill="#c9ced1"/>
+    <!-- head -->
+    <circle cx="508" cy="232" r="46" fill="#9aa3a8"/>
+    <!-- muzzle -->
+    <ellipse cx="508" cy="248" rx="27" ry="21" fill="#cfd4d7"/>
+    <!-- eyes -->
+    <circle cx="488" cy="224" r="5.5" fill="#2f3337"/>
+    <circle cx="528" cy="224" r="5.5" fill="#2f3337"/>
+    <!-- nose -->
+    <rect x="499" y="232" width="18" height="24" rx="9" fill="#3a3f44"/>
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+# sagex-chatsrv config template. Copy to environments/chatsrv/config.toml
+# (or let scripts/chatsrv-start.sh generate it) and fill in values.
+# Secrets live in environments/chatsrv/.env, NEVER here.
+
+[server]
+host = "127.0.0.1"
+port = 3001
+
+[mongo]
+uri = "mongodb://sagex:sagex-dev-only@127.0.0.1:27017"
+db = "sagex_chat"
+
+[rustfs]
+endpoint = "http://localhost:9000"
+bucket = "sagex-docs"
+region = "us-east-1"
+access_key = "sagexadmin"
+secret_key = "sagex-dev-only-change-me"
+put_url_ttl_secs = 900
+get_url_ttl_secs = 300
+
+[keys]
+# Paths resolve against the process working dir (the env dir under bwrap).
+prv_path = "chatsrv-service.prv"
+pub_path = "chatsrv-service.pub"
+# Env var holding the .prv wrapping password (set in environments/chatsrv/.env).
+password_env = "KEY_PASSWORD"
+
+[auth]
+access_ttl_mins = 15
+refresh_ttl_days = 7
+
+[ca]
+audience = "sagex-authsrv"
+token_ttl_mins = 5

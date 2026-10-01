@@ -1,0 +1,25 @@
+[package]
+name = "sagex-forensic"
+version = "0.1.0"
+edition = "2021"
+description = "Forensic sealed envelope (flagged, signed, per-recipient DEK/KEK) + recipient-side watermark derivation and Office embedding"
+license = "MIT"
+
+[lib]
+name = "sagex_forensic"
+path = "src/lib.rs"
+
+[dependencies]
+sagex-crypto = { path = "../sagex-crypto" }
+office-watermark = { path = "../office-watermark" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.11"
+hmac = "0.13"
+rand_core = { version = "0.6", features = ["getrandom"] }
+thiserror = "2"
+
+[dev-dependencies]
+zip = "2"
+binrw = "0.15.2"

@@ -1,0 +1,40 @@
+# sagex-gateway config (copy to gateway.toml and edit)
+[server]
+listen = "127.0.0.1:8081"
+
+[ledger]
+nodes = ["127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003"]
+submit_timeout_ms = 15000
+query_timeout_ms = 5000
+
+[outbox]
+db = "data/gateway.db"
+retry_interval_ms = 2000
+retry_batch = 32
+
+# Intake permits (CA-auth strategy, same code as sagex-certauth).
+# Secure by default: with enabled=true the gateway refuses /register calls
+# without a valid server-issued permit AND refuses to start until ca_id and
+# ca_pubkey_b64 are filled in. Set enabled=false only for open demos.
+# Jurisdiction: intake accepts kind=user permits only (bound to record
+# user_id); auditor logs (/logs) accept kind=server permits only.
+[auth]
+enabled = true
+ca_id = "sagex-ca"
+# STANDARD base64 of the raw ML-DSA-65 CA public key, i.e. the `key_dsa`
+# bytes from certauth's CA `.pub` file (see sagex-certauth CaMaterial).
+ca_pubkey_b64 = ""
+
+# This gateway's own ML-DSA-65 identity (RG keypair) is generated once into
+# gateway.db and reused across restarts (see GET /status rg_fingerprint).
+# The CA pins its public half (RG_PK_B64) to authenticate key-directory
+# lookups; the fingerprint is logged at boot for pin comparison.
+# Restricted auditor log view (GET /logs): gateway ring buffer + per-node
+# tails fanned out over the ledger TCP GetLogs query. Always gated by a
+# CA-issued auditor permit (Authorization: Bearer), minted offline via:
+#   sagex-certauth issue-permit --identity ledger-auditor --ttl-hours 720
+# Unlike intake permits these are multi-use (no JTI burn); rotate via TTL.
+[logs]
+enabled = true
+buffer = 2000
+auditor_sub = "ledger-auditor"

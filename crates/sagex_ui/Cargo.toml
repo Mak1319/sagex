@@ -1,0 +1,40 @@
+[package]
+name = "sagex_ui"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "sagex_ui"
+path = "src/main.rs"
+
+# Standalone loading dialog (Android-Studio-style floating panel).
+# Separate binary in the same crate; shares no code with the main app so
+# other workstreams can drive it in parallel over stdin JSON.
+[[bin]]
+name = "sagex_loader"
+path = "src/bin/loader.rs"
+
+[dependencies]
+gpui = "0.2.2"
+gpui-component = "0.5.1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dotenvy = "0.15"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+futures = "0.3"
+url = "2"
+cpal = "0.16"
+hound = "3"
+# Identity & vault: workspace PQC crypto + sagex key formats (offline-safe,
+# no new crates.io fetches beyond what the workspace already uses).
+sagex-crypto = { path = "../sagex-crypto" }
+sagex-format = { path = "../sagex-format" }
+sagex-auth = { path = "../sagex-auth" }
+sagex-forensic = { path = "../sagex-forensic" }
+rustpq = { version = "0.3.0", features = ["x25519-mlkem768", "mldsa65", "std"] }
+base64 = "0.22"
+binrw = "0.15.2"
+zeroize = "1.9"

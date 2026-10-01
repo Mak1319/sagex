@@ -1,2 +1,28 @@
 /target
 /node_modules
+/realfiles
+/test-*
+# Screenshot_* (desktop captures, any directory)
+# Screenshot_*.png
+/*test*
+molecular-svg-nextjs
+.cursor
+# local env files (keep *.example tracked)
+.env
+# CA key material (secrets)
+ca-data/
+# startup script runtime: logs, pidfiles, generated configs
+logs/
+.pids/
+runtime/
+# ledger/gateway runtime databases (nodes recreate missing DBs on boot)
+data/*.db*
+# node configs hold real keysets (local-only); tracked .toml.example are the templates
+crates/sagex-ledger/config/nodes/node0.toml
+crates/sagex-ledger/config/nodes/node1.toml
+crates/sagex-ledger/config/nodes/node2.toml
+crates/sagex-ledger/config/nodes/node3.toml
+# S3 object bits (recreated by the rustfs service; buckets bootstrapped on boot)
+rustfs-data/
+# compiled-service test envs (Rule §7: persist across boots, never commit)
+environments/

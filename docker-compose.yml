@@ -1,0 +1,55 @@
+name: sagex
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: sagex-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-sagex}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASS:-sagex-dev-only}
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - sagex-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: sagex-rustfs
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Console
+    command: ["/data"]
+    environment:
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-sagexadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-sagex-dev-only-change-me}
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+      - RUSTFS_CONSOLE_ENABLE=true
+    volumes:
+      - rustfs-data:/data
+    networks:
+      - sagex-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9001/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  sagex-net:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  rustfs-data:

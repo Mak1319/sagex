@@ -26,3 +26,6 @@ crates/sagex-ledger/config/nodes/node3.toml
 rustfs-data/
 # compiled-service test envs (Rule §7: persist across boots, never commit)
 environments/
+
+.envrc 
+/bin

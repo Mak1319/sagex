@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates3/raw-dinflater",
+members = ["crates3/office-l2wm","crates3/raw-dinflater",
     # "crates/watermark",
     # "crates/office-watermark",
     # "crates/office-watermark-demo",

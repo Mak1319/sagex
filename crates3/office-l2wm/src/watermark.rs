@@ -682,6 +682,115 @@ impl FontWatermark {
         out
     }
 
+    fn name_string(font: &[u8], name_id: u16) -> Option<String> {
+        let (off, len) = table_dir(font, b"name").ok()?;
+        if len < 6 || off + 6 > font.len() {
+            return None;
+        }
+        let count = u16::from_be_bytes([font[off + 2], font[off + 3]]) as usize;
+        let storage = off + u16::from_be_bytes([font[off + 4], font[off + 5]]) as usize;
+        let mut best: Option<String> = None;
+        for i in 0..count {
+            let r = off + 6 + i * 12;
+            if r + 12 > off + len || r + 12 > font.len() {
+                break;
+            }
+            let platform = u16::from_be_bytes([font[r], font[r + 1]]);
+            let enc = u16::from_be_bytes([font[r + 2], font[r + 3]]);
+            let id = u16::from_be_bytes([font[r + 6], font[r + 7]]);
+            if id != name_id {
+                continue;
+            }
+            let slen = u16::from_be_bytes([font[r + 8], font[r + 9]]) as usize;
+            let soff = u16::from_be_bytes([font[r + 10], font[r + 11]]) as usize;
+            if storage + soff + slen > font.len() {
+                continue;
+            }
+            let raw = &font[storage + soff..storage + soff + slen];
+            let s = if platform == 3 || (platform == 0) {
+                if raw.len() % 2 != 0 {
+                    continue;
+                }
+                String::from_utf16(
+                    &raw.chunks_exact(2)
+                        .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                        .collect::<Vec<_>>(),
+                )
+                .ok()?
+            } else {
+                String::from_utf8_lossy(raw).into_owned()
+            };
+            // prefer windows unicode english
+            if platform == 3 && enc == 1 {
+                return Some(s);
+            }
+            if best.is_none() {
+                best = Some(s);
+            }
+        }
+        best
+    }
+
+    /// Current family name from the font's own name table.
+    pub fn family_name(font_key: Option<&str>, font_bytes: &[u8]) -> Option<String> {
+        for font in Self::candidates(font_key, font_bytes) {
+            if let Some(n) = Self::name_string(&font, 1) {
+                return Some(n);
+            }
+        }
+        None
+    }
+
+    /// Strip subset uniformity prefix: "ABCDEF+Face" -> "Face".
+    pub fn strip_subset_prefix(face: &str) -> &str {
+        if let Some((pre, rest)) = face.split_once('+') {
+            if pre.len() == 6 && pre.chars().all(|c| c.is_ascii_alphanumeric()) {
+                return rest;
+            }
+        }
+        face
+    }
+
+    /// Fast pre-filter: candidate parses as a font with our marker codepoints.
+    pub fn has_markers(font_key: Option<&str>, font_bytes: &[u8]) -> bool {
+        for font in Self::candidates(font_key, font_bytes) {
+            let (cmap_off, _) = match table_dir(&font, b"cmap") {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if cmap_off + 4 > font.len() {
+                continue;
+            }
+            let n_sub = u16::from_be_bytes([font[cmap_off + 2], font[cmap_off + 3]]) as usize;
+            for i in 0..n_sub {
+                let o = cmap_off + 4 + i * 8;
+                if o + 8 > font.len() {
+                    break;
+                }
+                let sub = cmap_off
+                    + u32::from_be_bytes([font[o + 4], font[o + 5], font[o + 6], font[o + 7]])
+                        as usize;
+                if sub + 8 > font.len() {
+                    continue;
+                }
+                if u16::from_be_bytes([font[sub], font[sub + 1]]) != 4 {
+                    continue;
+                }
+                let mut all = true;
+                for ch in MARKERS {
+                    if cmap4_lookup(&font, sub, ch).is_none() {
+                        all = false;
+                        break;
+                    }
+                }
+                if all {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Extract payload from glyph outlines. Tries fontKey, self-recovery, raw.
     pub fn payload_from_font(font_key: Option<&str>, font_bytes: &[u8]) -> OL2WMResult<Vec<u8>> {
         let mut any_table = false;
@@ -810,5 +919,1106 @@ impl FontWatermark {
         } else {
             Err(Error::NoWatermark)
         }
+    }
+}
+
+// ---------- directory channel ----------
+
+const B32: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+const COMPS_PER_ENTRY: usize = 6;
+const COMP_LEN: usize = 8;
+
+pub(crate) fn b32_encode(b: &[u8]) -> String {
+    let mut out = String::new();
+    let mut buf: u32 = 0;
+    let mut bits = 0;
+    for &x in b {
+        buf = (buf << 8) | x as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(B32[((buf >> bits) & 31) as usize] as char);
+        }
+    }
+    if bits > 0 {
+        out.push(B32[((buf << (5 - bits)) & 31) as usize] as char);
+    }
+    out
+}
+
+fn b32_decode(s: &str) -> OL2WMResult<Vec<u8>> {
+    let mut buf: u32 = 0;
+    let mut bits = 0;
+    let mut out = Vec::new();
+    for ch in s.chars() {
+        let v = B32.iter().position(|&c| c as char == ch).ok_or(Error::BadCover {
+            detail: "bad base32 char in path",
+        })? as u32;
+        buf = (buf << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct DirEntry {
+    pub name: String,
+    pub data: Vec<u8>,
+    /// Unindexed trailing bytes after compressed data; len == data len.
+    pub trailer: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DirWatermark {
+    pub entries: Vec<DirEntry>,
+}
+
+impl DirWatermark {
+    pub fn new(payload: Vec<u8>) -> OL2WMResult<Self> {
+        if !ALLOWED.contains(&payload.len()) {
+            return Err(Error::BadSize { got: payload.len() });
+        }
+        let b32 = b32_encode(&payload);
+        let mut comps: Vec<String> = b32
+            .as_bytes()
+            .chunks(COMP_LEN)
+            .map(|c| String::from_utf8_lossy(c).into_owned())
+            .collect();
+        if comps.is_empty() {
+            comps.push("a".into());
+        }
+        let prefix = format!("w{:04}", hash16(&payload));
+        let n_entries = comps.len().div_ceil(COMPS_PER_ENTRY).max(1);
+        let data_chunk = payload.len().div_ceil(n_entries).max(1);
+        let mut entries = Vec::new();
+        for (i, cc) in comps.chunks(COMPS_PER_ENTRY).enumerate() {
+            let d0 = (i * data_chunk).min(payload.len());
+            let d1 = ((i + 1) * data_chunk).min(payload.len());
+            let data = payload[d0..d1].to_vec();
+            let trailer = Self::trailer_bytes(&data, i);
+            let name = format!("{prefix}/{i:02}/{}/", cc.join("/"));
+            entries.push(DirEntry { name, data, trailer });
+        }
+        Ok(Self { entries })
+    }
+
+    fn trailer_bytes(data: &[u8], salt: usize) -> Vec<u8> {
+        let mut s = hash16(data).wrapping_add((salt as u16).wrapping_mul(0x9e37)) as u64 | 1;
+        s ^= (data.len() as u64).wrapping_mul(0x85ebca6b);
+        data.iter()
+            .map(|_| {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                (s >> 11) as u8
+            })
+            .collect()
+    }
+
+    pub fn decode_names(names: &[String]) -> OL2WMResult<Vec<u8>> {
+        let mut sorted = names.to_vec();
+        sorted.sort();
+        let mut cat = String::new();
+        for n in &sorted {
+            let parts: Vec<&str> = n.split('/').filter(|s| !s.is_empty()).collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            for p in &parts[2..] {
+                cat.push_str(p);
+            }
+        }
+        b32_decode(&cat)
+    }
+
+    pub fn entry_to_local(e: &DirEntry) -> LocalFileHeader {
+        LocalFileHeader {
+            version: 10,
+            flags: zero_flags(),
+            compression_method: CompressionMethod::None,
+            mod_time: DosTime { raw: 0 },
+            mod_date: DosDate { raw: 0x21 },
+            crc32: crc32(&e.data),
+            compressed_size: e.data.len() as u32,
+            uncompressed_size: e.data.len() as u32,
+            file_name: e.name.as_bytes().to_vec(),
+            extra: ExtraFields::default(),
+            data: e.data.clone(),
+        }
+    }
+
+    fn entry_to_central(e: &DirEntry, lfh_offset: u32) -> CentralDirectoryFileHeader {
+        CentralDirectoryFileHeader {
+            version_made: 10,
+            version_extract: 10,
+            flags: zero_flags(),
+            compression_method: CompressionMethod::None,
+            mod_time: DosTime { raw: 0 },
+            mod_date: DosDate { raw: 0x21 },
+            crc32: crc32(&e.data),
+            compressed_size: e.data.len() as u32,
+            uncompressed_size: e.data.len() as u32,
+            file_name: e.name.as_bytes().to_vec(),
+            extra: ExtraFields::default(),
+            comment: Vec::new(),
+            disk_number: 0,
+            internal_attrs: 0,
+            external_attrs: 0x41ED0010,
+            local_header_offset: lfh_offset,
+        }
+    }
+
+    pub fn to_locals(&self) -> Vec<LocalFileHeader> {
+        self.entries.iter().map(Self::entry_to_local).collect()
+    }
+
+    pub fn to_centrals(&self, offsets: &[u32]) -> Vec<CentralDirectoryFileHeader> {
+        self.entries
+            .iter()
+            .zip(offsets.iter())
+            .map(|(e, &o)| Self::entry_to_central(e, o))
+            .collect()
+    }
+
+    pub fn entry_central_for(
+        l: &LocalFileHeader,
+        lfh_offset: u32,
+    ) -> CentralDirectoryFileHeader {
+        CentralDirectoryFileHeader {
+            version_made: 10,
+            version_extract: 10,
+            flags: l.flags,
+            compression_method: l.compression_method,
+            mod_time: l.mod_time,
+            mod_date: l.mod_date,
+            crc32: l.crc32,
+            compressed_size: l.compressed_size,
+            uncompressed_size: l.uncompressed_size,
+            file_name: l.file_name.clone(),
+            extra: l.extra.clone(),
+            comment: Vec::new(),
+            disk_number: 0,
+            internal_attrs: 0,
+            external_attrs: 0x41ED0010,
+            local_header_offset: lfh_offset,
+        }
+    }
+}
+
+// ---------- file channel (media covers) ----------
+
+fn png_chunk(ty: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    out.extend_from_slice(ty);
+    out.extend_from_slice(data);
+    out.extend_from_slice(&crc32(&[ty.as_slice(), data].concat()).to_be_bytes());
+    out
+}
+
+fn png_wrap(payload: &[u8]) -> Vec<u8> {
+    let mut out = vec![137, 80, 78, 71, 13, 10, 26, 10];
+    let ihdr = vec![0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
+    out.extend(png_chunk(b"IHDR", &ihdr));
+    out.extend(png_chunk(b"wmWM", payload));
+    out.extend(png_chunk(b"IEND", &[]));
+    out
+}
+
+fn wav_wrap(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&((36 + payload.len()) as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8000u32.to_le_bytes());
+    out.extend_from_slice(&8000u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+fn png_unwrap(file: &[u8]) -> OL2WMResult<Vec<u8>> {
+    if file.len() < 8 || file[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
+        return Err(Error::BadCover { detail: "not a PNG" });
+    }
+    let mut p = 8;
+    while p + 8 <= file.len() {
+        let len =
+            u32::from_be_bytes(file[p..p + 4].try_into().map_err(|_| Error::BadCover {
+                detail: "truncated PNG chunk",
+            })?) as usize;
+        let ty = &file[p + 4..p + 8];
+        if ty == b"wmWM" {
+            return Ok(file[p + 8..p + 8 + len.min(file.len() - p - 8)].to_vec());
+        }
+        p += 12 + len;
+    }
+    Err(Error::BadCover { detail: "wmWM chunk missing" })
+}
+
+fn wav_unwrap(file: &[u8]) -> OL2WMResult<Vec<u8>> {
+    if file.len() < 48 || &file[..4] != b"RIFF" || &file[8..12] != b"WAVE" {
+        return Err(Error::BadCover { detail: "not a WAV" });
+    }
+    let mut p = 12;
+    while p + 8 <= file.len() {
+        let id = &file[p..p + 4];
+        let len =
+            u32::from_le_bytes(file[p + 4..p + 8].try_into().map_err(|_| Error::BadCover {
+                detail: "truncated WAV chunk",
+            })?) as usize;
+        if id == b"data" {
+            return Ok(file[p + 8..p + 8 + len.min(file.len() - p - 8)].to_vec());
+        }
+        p += 8 + len;
+    }
+    Err(Error::BadCover { detail: "data chunk missing" })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverKind {
+    Png,
+    Wav,
+}
+
+impl CoverKind {
+    pub fn parse(s: &str) -> OL2WMResult<Self> {
+        match s {
+            "png" => Ok(Self::Png),
+            "wav" => Ok(Self::Wav),
+            _ => Err(Error::BadCover { detail: "cover must be png or wav" }),
+        }
+    }
+    fn ext(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Wav => "wav",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileWatermark {
+    pub path: String,
+    pub file_bytes: Vec<u8>,
+    pub cover: CoverKind,
+    pub payload_len: usize,
+}
+
+impl FileWatermark {
+    pub fn new(payload: Vec<u8>, cover: CoverKind) -> OL2WMResult<Self> {
+        if !ALLOWED.contains(&payload.len()) {
+            return Err(Error::BadSize { got: payload.len() });
+        }
+        let b32 = b32_encode(&payload);
+        let comps: Vec<String> = b32
+            .as_bytes()
+            .chunks(COMP_LEN)
+            .map(|c| String::from_utf8_lossy(c).into_owned())
+            .collect();
+        let h = hash16(&payload);
+        let groups: Vec<String> = comps
+            .chunks(COMPS_PER_ENTRY)
+            .enumerate()
+            .map(|(i, cc)| format!("{i:02}_{}", cc.join("")))
+            .collect();
+        let path = format!("media/wm{h:04}/{}.{}", groups.join("/"), cover.ext());
+        let file_bytes = match cover {
+            CoverKind::Png => png_wrap(&payload),
+            CoverKind::Wav => wav_wrap(&payload),
+        };
+        Ok(Self { path, file_bytes, cover, payload_len: payload.len() })
+    }
+
+    pub fn payload_from_file(path: &str, file_bytes: &[u8]) -> OL2WMResult<Vec<u8>> {
+        if path.ends_with(".png") {
+            png_unwrap(file_bytes)
+        } else if path.ends_with(".wav") {
+            wav_unwrap(file_bytes)
+        } else {
+            Err(Error::BadCover { detail: "unknown cover extension" })
+        }
+    }
+
+    pub fn to_local(&self) -> LocalFileHeader {
+        LocalFileHeader {
+            version: 10,
+            flags: zero_flags(),
+            compression_method: CompressionMethod::None,
+            mod_time: DosTime { raw: 0 },
+            mod_date: DosDate { raw: 0x21 },
+            crc32: crc32(&self.file_bytes),
+            compressed_size: self.file_bytes.len() as u32,
+            uncompressed_size: self.file_bytes.len() as u32,
+            file_name: self.path.as_bytes().to_vec(),
+            extra: ExtraFields::default(),
+            data: self.file_bytes.clone(),
+        }
+    }
+
+    pub fn file_central_for(l: &LocalFileHeader, lfh_offset: u32) -> CentralDirectoryFileHeader {
+        CentralDirectoryFileHeader {
+            version_made: 10,
+            version_extract: 10,
+            flags: l.flags,
+            compression_method: l.compression_method,
+            mod_time: l.mod_time,
+            mod_date: l.mod_date,
+            crc32: l.crc32,
+            compressed_size: l.compressed_size,
+            uncompressed_size: l.uncompressed_size,
+            file_name: l.file_name.clone(),
+            extra: l.extra.clone(),
+            comment: Vec::new(),
+            disk_number: 0,
+            internal_attrs: 0,
+            external_attrs: 0x20,
+            local_header_offset: lfh_offset,
+        }
+    }
+}
+
+// ---------- linked channel (OPC content-type + rels) ----------
+
+pub const IMAGE_REL_TYPE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+pub const AUDIO_REL_TYPE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio";
+
+#[derive(Debug, Clone)]
+pub struct LinkedWatermark {
+    pub file: FileWatermark,
+    pub media_rel_id: String,
+    pub custom_rel_id: String,
+}
+
+impl LinkedWatermark {
+    pub fn new(payload: Vec<u8>, cover: CoverKind) -> OL2WMResult<Self> {
+        let file = FileWatermark::new(payload.clone(), cover)?;
+        let h = hash16(&payload);
+        Ok(Self {
+            file,
+            media_rel_id: format!("rWm{h:04}m"),
+            custom_rel_id: format!("rWm{h:04}c"),
+        })
+    }
+
+    pub fn content_type(&self) -> &'static str {
+        match self.file.cover {
+            CoverKind::Png => "image/png",
+            CoverKind::Wav => "audio/wav",
+        }
+    }
+
+    pub fn media_rel_type(&self) -> &'static str {
+        match self.file.cover {
+            CoverKind::Png => IMAGE_REL_TYPE,
+            CoverKind::Wav => AUDIO_REL_TYPE,
+        }
+    }
+
+    pub fn part_name(&self) -> String {
+        format!("/{}", self.file.path)
+    }
+
+    pub fn patch_content_types(&self, xml: &[u8]) -> OL2WMResult<Vec<u8>> {
+        if xml.windows(self.file.path.len()).any(|w| w == self.file.path.as_bytes()) {
+            return Ok(xml.to_vec());
+        }
+        let element = format!(
+            "<Override PartName=\"{}\" ContentType=\"{}\"/>",
+            self.part_name(),
+            self.content_type()
+        );
+        let out = insert_raw_before_end(xml, b"</Types>", &element)?;
+        check_well_formed(&out)?;
+        Ok(out)
+    }
+
+    pub fn patch_rels(&self, xml: &[u8]) -> OL2WMResult<Vec<u8>> {
+        let part = self.part_name();
+        let mut elements = String::new();
+        if !xml.windows(self.media_rel_id.len()).any(|w| w == self.media_rel_id.as_bytes()) {
+            elements.push_str(&format!(
+                "<Relationship Id=\"{}\" Type=\"{}\" Target=\"{}\"/>",
+                self.media_rel_id,
+                self.media_rel_type(),
+                part
+            ));
+        }
+        if !xml.windows(self.custom_rel_id.len()).any(|w| w == self.custom_rel_id.as_bytes()) {
+            elements.push_str(&format!(
+                "<Relationship Id=\"{}\" Type=\"{}\" Target=\"{}\"/>",
+                self.custom_rel_id, CUSTOM_REL_TYPE, part
+            ));
+        }
+        if elements.is_empty() {
+            return Ok(xml.to_vec());
+        }
+        insert_raw_before_end(xml, b"</Relationships>", &elements)
+    }
+
+    pub fn insert_override(xml: &[u8], element: &str) -> OL2WMResult<Vec<u8>> {
+        insert_raw_before_end(xml, b"</Types>", element)
+    }
+
+    pub fn rels_path_for(parts: &[String]) -> (String, bool) {
+        for c in [
+            "word/_rels/document.xml.rels",
+            "xl/_rels/workbook.xml.rels",
+            "ppt/_rels/presentation.xml.rels",
+        ] {
+            if parts.iter().any(|p| p == c) {
+                return (c.to_string(), true);
+            }
+        }
+        ("customXml/_rels/item1.xml.rels".to_string(), false)
+    }
+}
+
+pub(crate) fn insert_raw_before_end(
+    xml: &[u8],
+    closing: &[u8],
+    elements: &str,
+) -> OL2WMResult<Vec<u8>> {
+    let pos = xml
+        .windows(closing.len())
+        .position(|w| w == closing)
+        .ok_or(Error::Xml { stage: "parent-end-not-found" })?;
+    let mut out = Vec::with_capacity(xml.len() + elements.len());
+    out.extend_from_slice(&xml[..pos]);
+    out.extend_from_slice(elements.as_bytes());
+    out.extend_from_slice(&xml[pos..]);
+    Ok(out)
+}
+
+fn check_well_formed(xml: &[u8]) -> OL2WMResult<()> {
+    // lightweight tag-balance scan (no external dep): every <x> closed.
+    let mut depth = 0i32;
+    let mut i = 0;
+    while i < xml.len() {
+        if xml[i] == b'<' && i + 1 < xml.len() {
+            match xml[i + 1] {
+                b'?' => {
+                    if let Some(e) = find_sub(&xml[i..], b"?>") {
+                        i += e + 2;
+                        continue;
+                    }
+                    return Err(Error::Xml { stage: "well-formedness-check" });
+                }
+                b'!' => {
+                    if let Some(e) = find_sub(&xml[i..], b">") {
+                        i += e + 1;
+                        continue;
+                    }
+                    return Err(Error::Xml { stage: "well-formedness-check" });
+                }
+                b'/' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        return Err(Error::Xml { stage: "well-formedness-check" });
+                    }
+                }
+                _ => {
+                    // self-closing check at tag end
+                    if let Some(e) = find_sub(&xml[i..], b">") {
+                        if xml[i + e - 1] != b'/' {
+                            depth += 1;
+                        }
+                        i += e + 1;
+                        continue;
+                    }
+                    return Err(Error::Xml { stage: "well-formedness-check" });
+                }
+            }
+        }
+        i += 1;
+    }
+    if depth != 0 {
+        return Err(Error::Xml { stage: "well-formedness-check" });
+    }
+    Ok(())
+}
+
+fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+// ---------- attribute channel (sage:wm in XML roots) ----------
+
+pub const SAGE_NS: &str = "http://sagex/wm";
+
+const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn b64_encode(b: &[u8]) -> String {
+    let mut out = String::new();
+    for c in b.chunks(3) {
+        let mut n: u32 = 0;
+        for &x in c {
+            n = (n << 8) | x as u32;
+        }
+        n <<= (3 - c.len()) * 8;
+        let chars = match c.len() {
+            3 => vec![(n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63, n & 63],
+            2 => vec![(n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63],
+            _ => vec![(n >> 18) & 63, (n >> 12) & 63],
+        };
+        for v in chars {
+            out.push(B64[v as usize] as char);
+        }
+        for _ in 0..(3 - c.len()) {
+            out.push('=');
+        }
+    }
+    out
+}
+
+fn b64_decode(s: &str) -> OL2WMResult<Vec<u8>> {
+    let mut vals: Vec<u32> = Vec::new();
+    let mut pad = 0;
+    for ch in s.chars() {
+        if ch == '=' {
+            pad += 1;
+            vals.push(0);
+            continue;
+        }
+        let v = B64.iter().position(|&c| c as char == ch).ok_or(Error::BadCover {
+            detail: "bad base64 char in sage:wm",
+        })? as u32;
+        vals.push(v);
+    }
+    if vals.len() % 4 != 0 {
+        return Err(Error::BadCover { detail: "bad base64 length in sage:wm" });
+    }
+    let mut out = Vec::new();
+    for g in vals.chunks(4) {
+        let n = (g[0] << 18) | (g[1] << 12) | (g[2] << 6) | g[3];
+        out.push((n >> 16) as u8);
+        out.push((n >> 8) as u8);
+        out.push(n as u8);
+    }
+    for _ in 0..pad {
+        out.pop();
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct AttrChunk {
+    pub seq: usize,
+    pub rep: usize,
+    pub total: usize,
+    pub b64: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttrWatermark {
+    pub assignments: Vec<(String, Vec<AttrChunk>)>,
+    pub payload_len: usize,
+}
+
+impl AttrWatermark {
+    pub fn new(
+        payload: Vec<u8>,
+        parts: &[String],
+        kind: ContainerKind,
+        rep: usize,
+    ) -> OL2WMResult<Self> {
+        if !ALLOWED.contains(&payload.len()) {
+            return Err(Error::BadSize { got: payload.len() });
+        }
+        let eligible = Self::eligible_parts(kind, parts);
+        if eligible.is_empty() {
+            return Err(Error::MissingPart { name: "*.xml".into() });
+        }
+        let rep = rep.clamp(1, 5);
+        let b64 = b64_encode(&payload);
+        let per = eligible.len().max(1);
+        let size = ((b64.len() + per - 1) / per).clamp(16, 512);
+        let mut chunks: Vec<String> = Vec::new();
+        let mut rest = b64.as_str();
+        while !rest.is_empty() {
+            let k = size.min(rest.len());
+            chunks.push(rest[..k].to_string());
+            rest = &rest[k..];
+        }
+        let total = chunks.len();
+        let mut per_part: Vec<Vec<AttrChunk>> = vec![Vec::new(); eligible.len()];
+        for (i, ch) in chunks.iter().enumerate() {
+            for r in 0..rep {
+                let idx = (i * rep + r * 7 + i) % eligible.len();
+                if !per_part[idx].iter().any(|c: &AttrChunk| c.seq == i) {
+                    per_part[idx].push(AttrChunk { seq: i, rep: r, total, b64: ch.clone() });
+                }
+            }
+        }
+        let assignments = eligible.into_iter().zip(per_part).filter(|(_, c)| !c.is_empty()).collect();
+        Ok(Self { assignments, payload_len: payload.len() })
+    }
+
+    fn eligible_parts(kind: ContainerKind, parts: &[String]) -> Vec<String> {
+        parts
+            .iter()
+            .filter(|p| {
+                let p = p.as_str();
+                if p == "[Content_Types].xml" || p == "mimetype" {
+                    return false;
+                }
+                if matches!(kind, ContainerKind::Odf) && p == "META-INF/manifest.xml" {
+                    return false;
+                }
+                p.ends_with(".xml") || p.ends_with(".rels")
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn splice_root(xml: &[u8], attrs: &str) -> OL2WMResult<Vec<u8>> {
+        let mut i = 0;
+        while i < xml.len() {
+            if xml[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            if i + 1 >= xml.len() {
+                break;
+            }
+            match xml[i + 1] {
+                b'?' => {
+                    if let Some(e) = find_sub(&xml[i..], b"?>") {
+                        i += e + 2;
+                        continue;
+                    }
+                    return Err(Error::Xml { stage: "attr-decl" });
+                }
+                b'!' => {
+                    if let Some(e) = find_sub(&xml[i..], b">") {
+                        i += e + 1;
+                        continue;
+                    }
+                    return Err(Error::Xml { stage: "attr-doctype" });
+                }
+                b'/' => return Err(Error::Xml { stage: "attr-no-root" }),
+                _ => break,
+            }
+        }
+        if i >= xml.len() || xml[i] != b'<' {
+            return Err(Error::Xml { stage: "attr-no-root" });
+        }
+        let mut j = i + 1;
+        let mut q = 0u8;
+        while j < xml.len() {
+            let c = xml[j];
+            if q != 0 {
+                if c == q {
+                    q = 0;
+                }
+            } else if c == b'"' || c == b'\'' {
+                q = c;
+            } else if c == b'>' {
+                break;
+            }
+            j += 1;
+        }
+        if j >= xml.len() {
+            return Err(Error::Xml { stage: "attr-unclosed-root" });
+        }
+        let mut out = Vec::with_capacity(xml.len() + attrs.len() + 64);
+        out.extend_from_slice(&xml[..j]);
+        if xml[j - 1] == b'/' {
+            out.pop();
+            out.extend_from_slice(b" ");
+            out.extend_from_slice(b"xmlns:sage=\"http://sagex/wm\"");
+            out.extend_from_slice(attrs.as_bytes());
+            out.extend_from_slice(b"/>");
+        } else {
+            out.extend_from_slice(b" ");
+            out.extend_from_slice(b"xmlns:sage=\"http://sagex/wm\"");
+            out.extend_from_slice(attrs.as_bytes());
+            out.extend_from_slice(b">");
+        }
+        out.extend_from_slice(&xml[j + 1..]);
+        Ok(out)
+    }
+
+    fn attrs_for(chunks: &[AttrChunk]) -> String {
+        let mut s = String::new();
+        for (k, c) in chunks.iter().enumerate() {
+            s.push_str(&format!(
+                " sage:wm{k}=\"{}\" sage:wm-s{k}=\"{}/{}\" sage:wm-r{k}=\"{}\"",
+                c.b64, c.seq, c.total, c.rep
+            ));
+        }
+        s
+    }
+
+    pub fn apply_to(&self, part: &str, xml: &[u8]) -> OL2WMResult<Vec<u8>> {
+        let chunks = self
+            .assignments
+            .iter()
+            .find(|(p, _)| p == part)
+            .map(|(_, c)| c)
+            .ok_or(Error::MissingPart { name: part.into() })?;
+        let out = Self::splice_root(xml, &Self::attrs_for(chunks))?;
+        check_well_formed(&out)?;
+        Ok(out)
+    }
+
+    pub fn decode(scanned: &[(String, Vec<u8>)]) -> OL2WMResult<Vec<u8>> {
+        use std::collections::HashMap;
+        let mut map: HashMap<usize, (usize, String)> = HashMap::new();
+        for (_, xml) in scanned {
+            for (_, seq, total, _, b64) in Self::scan_attrs(xml) {
+                map.entry(seq).or_insert((total, b64));
+            }
+        }
+        if map.is_empty() {
+            return Err(Error::NoWatermark);
+        }
+        let total = map.values().next().map(|(t, _)| *t).unwrap_or(0);
+        let mut seqs: Vec<usize> = map.keys().cloned().collect();
+        seqs.sort_unstable();
+        if total > 0 && seqs.len() == total && seqs.iter().enumerate().all(|(i, s)| *s == i) {
+            let cat: String = seqs.iter().map(|s| map[s].1.as_str()).collect();
+            return b64_decode(&cat);
+        }
+        Err(Error::BadCover { detail: "sage:wm chunks incomplete in all reps" })
+    }
+
+    fn scan_attrs(xml: &[u8]) -> Vec<(usize, usize, usize, usize, String)> {
+        use std::collections::HashMap;
+        let mut out = Vec::new();
+        let mut vals: HashMap<String, String> = HashMap::new();
+        let mut i = 0;
+        while i < xml.len() {
+            if xml[i..].starts_with(b"sage:wm") {
+                let mut j = i + 7;
+                let mut key = String::from("wm");
+                if j < xml.len() && xml[j] == b'-' && j + 1 < xml.len()
+                    && (xml[j + 1] == b's' || xml[j + 1] == b'r')
+                {
+                    let kind = xml[j + 1] as char;
+                    let mut k = j + 2;
+                    let mut num = String::new();
+                    while k < xml.len() && xml[k].is_ascii_digit() {
+                        num.push(xml[k] as char);
+                        k += 1;
+                    }
+                    key = format!("{kind}-{num}");
+                    j = k;
+                } else if j < xml.len() && xml[j] == b'-' {
+                    let mut k = j + 1;
+                    let mut num = String::new();
+                    while k < xml.len() && xml[k].is_ascii_digit() {
+                        num.push(xml[k] as char);
+                        k += 1;
+                    }
+                    if !num.is_empty() {
+                        key = format!("w-{num}");
+                        j = k;
+                    }
+                } else if j < xml.len() && xml[j].is_ascii_digit() {
+                    let mut num = String::new();
+                    while j < xml.len() && xml[j].is_ascii_digit() {
+                        num.push(xml[j] as char);
+                        j += 1;
+                    }
+                    key = format!("w-{num}");
+                }
+                while j < xml.len() && xml[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j < xml.len() && xml[j] == b'=' {
+                    j += 1;
+                    while j < xml.len() && xml[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if j < xml.len() && (xml[j] == b'"' || xml[j] == b'\'') {
+                        let q = xml[j];
+                        j += 1;
+                        let start = j;
+                        while j < xml.len() && xml[j] != q {
+                            j += 1;
+                        }
+                        vals.insert(key, String::from_utf8_lossy(&xml[start..j]).into_owned());
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
+        let mut per: HashMap<String, (usize, usize, usize, String)> = HashMap::new();
+        for (k, v) in &vals {
+            if let Some(n) = k.strip_prefix("w-") {
+                let e = per.entry(n.to_string()).or_insert((0, 0, 0, String::new()));
+                e.3 = v.clone();
+            } else if let Some(n) = k.strip_prefix("s-") {
+                let mut it = v.split('/');
+                let e = per.entry(n.to_string()).or_insert((0, 0, 0, String::new()));
+                e.0 = it.next().unwrap_or("0").parse().unwrap_or(0);
+                e.1 = it.next().unwrap_or("0").parse().unwrap_or(0);
+            } else if let Some(n) = k.strip_prefix("r-") {
+                let e = per.entry(n.to_string()).or_insert((0, 0, 0, String::new()));
+                e.2 = v.parse().unwrap_or(0);
+            }
+        }
+        for (k, (seq, total, rep, b64)) in per {
+            if !b64.is_empty() && total > 0 {
+                out.push((k.parse().unwrap_or(0), seq, total, rep, b64));
+            }
+        }
+        out
+    }
+}
+
+// ---------- image channel (pixel-literal PNG + tiny drawing) ----------
+
+fn adler32(data: &[u8]) -> u32 {
+    let mut a: u32 = 1;
+    let mut b: u32 = 0;
+    for &x in data {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
+fn zlib_stored(raw: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x78, 0x01];
+    for c in raw.chunks(65535) {
+        let last = c.as_ptr() as usize + c.len() == raw.as_ptr() as usize + raw.len();
+        out.push(if last { 0x01 } else { 0x00 });
+        out.extend_from_slice(&(c.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(!c.len() as u16).to_le_bytes());
+        out.extend_from_slice(c);
+    }
+    out.extend_from_slice(&adler32(raw).to_be_bytes());
+    out
+}
+
+fn png_image(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    assert_eq!(rgba.len() as u32, w * h * 4);
+    let mut raw = Vec::new();
+    for row in rgba.chunks_exact(w as usize * 4) {
+        raw.push(0); // filter None
+        raw.extend_from_slice(row);
+    }
+    let mut out = vec![137, 80, 78, 71, 13, 10, 26, 10];
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    out.extend(png_chunk(b"IHDR", &ihdr));
+    out.extend(png_chunk(b"IDAT", &zlib_stored(&raw)));
+    out.extend(png_chunk(b"IEND", &[]));
+    out
+}
+
+fn png_pixels(png: &[u8]) -> OL2WMResult<(u32, u32, Vec<u8>)> {
+    if png.len() < 8 || png[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
+        return Err(Error::BadCover { detail: "not a PNG" });
+    }
+    let mut p = 8;
+    let (mut w, mut h) = (0u32, 0u32);
+    let mut depth = 0u8;
+    let mut ctype = 0u8;
+    let mut idat = Vec::new();
+    while p + 8 <= png.len() {
+        let len =
+            u32::from_be_bytes(png[p..p + 4].try_into().map_err(|_| Error::BadCover {
+                detail: "truncated PNG chunk",
+            })?) as usize;
+        if p + 12 + len > png.len() {
+            return Err(Error::BadCover { detail: "truncated PNG chunk" });
+        }
+        match &png[p + 4..p + 8] {
+            b"IHDR" => {
+                if len < 13 {
+                    return Err(Error::BadCover { detail: "bad IHDR" });
+                }
+                w = u32::from_be_bytes(png[p + 8..p + 12].try_into().unwrap());
+                h = u32::from_be_bytes(png[p + 12..p + 16].try_into().unwrap());
+                depth = png[p + 16];
+                ctype = png[p + 17];
+            }
+            b"IDAT" => idat.extend_from_slice(&png[p + 8..p + 8 + len]),
+            _ => {}
+        }
+        p += 12 + len;
+    }
+    if w == 0 || h == 0 || w * h > 1 << 20 {
+        return Err(Error::BadCover { detail: "bad PNG dimensions" });
+    }
+    // zlib stream: 2-byte header + deflate + adler32
+    if idat.len() < 6 {
+        return Err(Error::BadCover { detail: "bad IDAT" });
+    }
+    let body = &idat[2..idat.len() - 4];
+    let raw = deflate_decode(body).ok_or(Error::BadCover { detail: "IDAT inflate failed" })?;
+    // unfilter; support RGBA8 (6) and RGB8 (2), G8 (0)
+    let bpp: usize = match (ctype, depth) {
+        (6, 8) => 4,
+        (2, 8) => 3,
+        (0, 8) => 1,
+        _ => return Err(Error::BadCover { detail: "unsupported PNG color type" }),
+    };
+    let stride = w as usize * bpp;
+    let mut px = Vec::with_capacity(h as usize * stride);
+    let mut prev = vec![0u8; stride];
+    let mut q = 0;
+    for _ in 0..h {
+        if q + 1 + stride > raw.len() {
+            return Err(Error::BadCover { detail: "short scanlines" });
+        }
+        let f = raw[q];
+        q += 1;
+        let mut row = vec![0u8; stride];
+        for i in 0..stride {
+            let a = if i >= bpp { row[i - bpp] } else { 0 };
+            let b = prev[i];
+            let c = if i >= bpp { prev[i - bpp] } else { 0 };
+            row[i] = raw[q + i].wrapping_add(match f {
+                0 => 0,
+                1 => a,
+                2 => b,
+                3 => ((a as u16 + b as u16) / 2) as u8,
+                4 => paeth(a, b, c),
+                _ => return Err(Error::BadCover { detail: "bad filter" }),
+            });
+        }
+        q += stride;
+        prev = row.clone();
+        px.extend_from_slice(&row);
+    }
+    // normalize to RGBA bytes for payload read: take raw channel bytes
+    Ok((w, h, px))
+}
+
+fn paeth(a: u8, b: u8, c: u8) -> u8 {
+    let (a, b, c) = (a as i16, b as i16, c as i16);
+    let p = a + b - c;
+    let (pa, pb, pc) = ((p - a).abs(), (p - b).abs(), (p - c).abs());
+    if pa <= pb && pa <= pc {
+        a as u8
+    } else if pb <= pc {
+        b as u8
+    } else {
+        c as u8
+    }
+}
+
+fn deflate_decode(data: &[u8]) -> Option<Vec<u8>> {
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+    let mut d = DeflateDecoder::new(data);
+    let mut out = Vec::new();
+    d.read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageWatermark {
+    pub path: String,
+    pub png_bytes: Vec<u8>,
+    pub payload_len: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ImageWatermark {
+    fn dims_for(len: usize) -> (u32, u32) {
+        // RGBA: 4 bytes/px; header 4 + payload, padded to 4
+        let total = (4 + len + 3) / 4 * 4;
+        let px = (total / 4) as u32;
+        let w = (px as f64).sqrt().ceil() as u32;
+        let h = (px + w - 1) / w;
+        (w.max(1), h.max(1))
+    }
+
+    pub fn new(payload: Vec<u8>) -> OL2WMResult<Self> {
+        if !ALLOWED.contains(&payload.len()) {
+            return Err(Error::BadSize { got: payload.len() });
+        }
+        let h = hash16(&payload);
+        let (w, hh) = Self::dims_for(payload.len());
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        raw.extend_from_slice(&crc16(&payload).to_le_bytes());
+        raw.extend_from_slice(&payload);
+        while raw.len() < (w * hh * 4) as usize {
+            raw.push(0);
+        }
+        let png_bytes = png_image(w, hh, &raw);
+        Ok(Self {
+            path: format!("media/wmimg{h:04}.png"),
+            png_bytes,
+            payload_len: payload.len(),
+            width: w,
+            height: hh,
+        })
+    }
+
+    pub fn media_path_for(&self, kind: ContainerKind) -> String {
+        match kind {
+            ContainerKind::OpcDocx => format!("word/{}", self.path),
+            ContainerKind::OpcXlsx => format!("xl/{}", self.path),
+            ContainerKind::OpcPptx => format!("ppt/{}", self.path),
+            _ => format!("media/{}", self.path.split('/').last().unwrap_or("wm.png")),
+        }
+    }
+
+    pub fn payload_from_png(png: &[u8]) -> OL2WMResult<Vec<u8>> {
+        let (_, _, px) = png_pixels(png)?;
+        // RGBA stride: payload is channel-concatenated? we stored RGBA quads
+        // in order, so the byte stream is already contiguous
+        if px.len() < 4 {
+            return Err(Error::NoWatermark);
+        }
+        let len = u16::from_le_bytes([px[0], px[1]]) as usize;
+        let crc = u16::from_le_bytes([px[2], px[3]]);
+        if !ALLOWED.contains(&len) || px.len() < 4 + len {
+            return Err(Error::NoWatermark);
+        }
+        let payload = px[4..4 + len].to_vec();
+        if crc16(&payload) != crc {
+            return Err(Error::BadCover { detail: "image payload crc mismatch" });
+        }
+        Ok(payload)
+    }
+
+    pub fn to_local(&self, path: &str) -> LocalFileHeader {
+        LocalFileHeader {
+            version: 10,
+            flags: zero_flags(),
+            compression_method: CompressionMethod::None,
+            mod_time: DosTime { raw: 0 },
+            mod_date: DosDate { raw: 0x21 },
+            crc32: crc32(&self.png_bytes),
+            compressed_size: self.png_bytes.len() as u32,
+            uncompressed_size: self.png_bytes.len() as u32,
+            file_name: path.as_bytes().to_vec(),
+            extra: ExtraFields::default(),
+            data: self.png_bytes.clone(),
+        }
+    }
+
+    pub fn media_rel_id(&self) -> String {
+        format!("rWmI{:04}", hash16(&self.png_bytes) & 0xffff)
+    }
+
+    pub fn custom_rel_id(&self) -> String {
+        format!("rWmJ{:04}", hash16(&self.png_bytes) & 0xffff)
     }
 }

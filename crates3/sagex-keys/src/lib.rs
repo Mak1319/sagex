@@ -71,6 +71,10 @@ impl InternalKey {
 ///
 /// Its most relevant use is in future
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 pub struct KeyConfig {
     signature_algo: String,
     signature_variable: String,
@@ -98,6 +102,10 @@ pub struct EncapsulatedKey {
 /// This only encapsulate the public keys in a structure
 ///
 /// Useful when CSR have to made or visit through internet
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 #[derive(Serialize, Deserialize)]
 pub struct PublicKey {
     pub format_version: u32,

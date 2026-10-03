@@ -3,6 +3,11 @@ name = "sagex-keys"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+rkyv = ["dep:rkyv"]
+
 [dependencies]
+rkyv = { version = "0.8", optional = true }
 sagex-crypto = { path = "../sagex-crypto" }
 serde = { version = "1.0.229", features = ["derive"] }

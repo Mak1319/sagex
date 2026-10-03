@@ -1,0 +1,11 @@
+[package]
+name = "sagex-capsule"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sagex-crypto = { path = "../sagex-crypto" }
+serde = { version = "1.0.229", features = ["derive"] }
+sagex-keys = { path = "../sagex-keys" }
+rand = "0.10.3"
+binrw = "0.15.2"

@@ -1,7 +1,0 @@
-[package]
-name = "sagex-safecap"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-sagex-capsule = { path = "../sagex-capsule" }

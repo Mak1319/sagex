@@ -6,6 +6,6 @@ members = [
     "crates3/sagex-crypto",
     "crates3/sagex-keys",
     "crates3/sagex-safecap",
-    "crates3/sagex-archive", "crates3/sagex-test", "crates3/sagex-fmtcsr",
+    "crates3/sagex-archive", "crates3/sagex-test", "crates3/sagex-fmtcsr", "crates3/sagex-certx",
 ]
 resolver = "3"

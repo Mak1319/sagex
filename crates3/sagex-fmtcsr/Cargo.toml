@@ -6,6 +6,6 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4.45", features = ["serde"] }
 rkyv = "0.8"
-sagex-keys = { path = "../sagex-keys", features = ["rkyv"] }
+sagex-keys = { path = "../sagex-keys" }
 serde = { version = "1.0.229", features = ["derive"] }
 typetag = "0.2"

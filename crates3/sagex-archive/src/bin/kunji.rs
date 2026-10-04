@@ -65,16 +65,14 @@ fn run_kunji(kunji_arguments: &KunjiArgs) -> Result<(), KunjiFailure> {
     let private_path = kunji_arguments
         .output_folder
         .join(format!("{}.prv", kunji_arguments.user_name));
-    let private_bytes = serde_json::to_string_pretty(&wrapped_key)
-        .map_err(|error| KunjiFailure::Terminal(error.to_string()))?;
+    let private_bytes = wrapped_key.to_bytes().map_err(KunjiFailure::Terminal)?;
     std::fs::write(&private_path, private_bytes)
         .map_err(|error| KunjiFailure::Terminal(error.to_string()))?;
     let public_key = PublicKey::from(wrapped_key);
     let public_path = kunji_arguments
         .output_folder
         .join(format!("{}.pub", kunji_arguments.user_name));
-    let public_bytes = serde_json::to_string_pretty(&public_key)
-        .map_err(|error| KunjiFailure::Terminal(error.to_string()))?;
+    let public_bytes = public_key.to_bytes().map_err(KunjiFailure::Terminal)?;
     std::fs::write(&public_path, public_bytes)
         .map_err(|error| KunjiFailure::Terminal(error.to_string()))?;
     println!("wrote private key {}", private_path.display());

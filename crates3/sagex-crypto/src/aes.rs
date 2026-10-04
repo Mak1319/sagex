@@ -34,7 +34,7 @@ pub use kem::KemOps;
 ///
 /// What it does it encrypts the PQC keys and convert them into cipher text
 /// and it can be decrypted by using password  
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct KeyEncapsulation {
     secret_key: Vec<u8>,
     pub salt: [u8; SALT_LEN],

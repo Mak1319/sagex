@@ -144,7 +144,7 @@ fn run_nidhi(archive_command: ArchiveCommand) -> Result<(), ArchiveError> {
 fn read_public_key_file(key_path: &PathBuf) -> Result<PublicKey, ArchiveError> {
     let key_bytes =
         std::fs::read(key_path).map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
-    serde_json::from_slice(&key_bytes).map_err(|error| ArchiveError::KeyFile(error.to_string()))
+    PublicKey::from_bytes(&key_bytes).map_err(|error| ArchiveError::KeyFile(error))
 }
 
 fn load_signing_seed(signer_key_file: &PathBuf) -> Result<[u8; 32], ArchiveError> {
@@ -157,8 +157,8 @@ fn load_signing_seed(signer_key_file: &PathBuf) -> Result<[u8; 32], ArchiveError
     );
     let private_bytes =
         std::fs::read(signer_key_file).map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
-    let wrapped_key: EncapsulatedKey = serde_json::from_slice(&private_bytes)
-        .map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
+    let wrapped_key = EncapsulatedKey::from_bytes(&private_bytes)
+        .map_err(ArchiveError::KeyFile)?;
     let (salt_bytes, round_count) = wrapped_key.key.get_signature_deliverable();
     let password_key =
         sagex_crypto::aes::generate_key(typed_password.as_bytes(), salt_bytes, round_count);
@@ -385,8 +385,7 @@ fn run_extract(
         };
         let trust_bytes = std::fs::read(trusted_path)
             .map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
-        let trust_key: PublicKey = serde_json::from_slice(&trust_bytes)
-            .map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
+        let trust_key = PublicKey::from_bytes(&trust_bytes).map_err(ArchiveError::KeyFile)?;
         let mut verify_reader = std::fs::File::open(input_file)
             .map_err(|error| ArchiveError::InputOutput(error.to_string()))?;
         let signer_is_good = signer_report
@@ -429,8 +428,8 @@ fn run_extract(
     );
     let private_bytes = std::fs::read(private_key_file)
         .map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
-    let wrapped_key: EncapsulatedKey = serde_json::from_slice(&private_bytes)
-        .map_err(|error| ArchiveError::KeyFile(error.to_string()))?;
+    let wrapped_key = EncapsulatedKey::from_bytes(&private_bytes)
+        .map_err(ArchiveError::KeyFile)?;
     let key_owner_name = wrapped_key.key.user_name().to_string();
     let decapsulation_options =
         DekDecapsulationOptions::derive_kem_key(typed_password.as_bytes(), wrapped_key.key)

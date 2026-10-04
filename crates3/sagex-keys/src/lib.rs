@@ -7,7 +7,7 @@ pub const VERSION: u32 = 1;
 
 /// It is the internal structure of a keys which need to be stored
 /// in the storage for future use
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct InternalKey {
     format_version: u32,
     signature_encapsulation: KeyEncapsulation,
@@ -70,11 +70,7 @@ impl InternalKey {
 /// Stores other information which are not important for cryptography
 ///
 /// Its most relevant use is in future
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "rkyv",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct KeyConfig {
     signature_algo: String,
     signature_variable: String,
@@ -82,7 +78,7 @@ pub struct KeyConfig {
     kem_variable: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum PasswordDerivationStrategy {
     Password,
     Hardwere,
@@ -90,7 +86,7 @@ pub enum PasswordDerivationStrategy {
 
 /// This is the encapsulation around the internal structure
 /// it this is the exact format which will be stored in the file
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct EncapsulatedKey {
     pub format_signature: [u8; 4],
     pub version: u32,
@@ -99,20 +95,40 @@ pub struct EncapsulatedKey {
     pub derived_from: PasswordDerivationStrategy,
 }
 
+impl EncapsulatedKey {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|v| v.to_vec())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|e| e.to_string())
+    }
+}
+
 /// This only encapsulate the public keys in a structure
 ///
 /// Useful when CSR have to made or visit through internet
-#[cfg_attr(
-    feature = "rkyv",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct PublicKey {
     pub format_version: u32,
     pub signature_key: Vec<u8>,
     pub kem_key: Vec<u8>,
     pub user_name: String,
     pub key_config: Option<KeyConfig>,
+}
+
+impl PublicKey {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|v| v.to_vec())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        rkyv::from_bytes::<Self, rkyv::rancor::Error>(bytes).map_err(|e| e.to_string())
+    }
 }
 
 impl From<EncapsulatedKey> for PublicKey {

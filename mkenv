@@ -1,0 +1,45 @@
+#!/bin/sh
+# mkenv <env-name>: scaffold environments/<env-name>/ with a direnv+bwrap
+# entry file, so plain `cd` into the env dir drops you into a sandbox shell.
+set -eu
+
+name="${1:?usage: mkenv <env-name>}"
+case "$name" in
+    *[!a-zA-Z0-9_-]* | "" )
+        echo "mkenv: name must match [a-zA-Z0-9_-]" >&2
+        exit 1
+        ;;
+esac
+
+envdir="environments/$name"
+if [ -e "$envdir" ]; then
+    echo "mkenv: $envdir already exists" >&2
+    exit 1
+fi
+mkdir -p "$envdir"
+cat > "$envdir/.envrc" <<'TEMPLATE'
+# Auto-enter the bwrap sandbox on cd. Guard var stops re-exec loops.
+if [ -z "${IN_SAGEX_BWRAP:-}" ]; then
+  export IN_SAGEX_BWRAP=1
+  # direnv evaluates this file with $PWD set to the env dir.
+  ENV_DIR="$PWD"
+  REPO_ROOT="$(cd "$ENV_DIR/../.." && pwd)"
+  exec bwrap \
+    --die-with-parent \
+    --unshare-pid --unshare-uts --unshare-ipc --unshare-cgroup \
+    --share-net \
+    --ro-bind /usr /usr --ro-bind /etc /etc \
+    --symlink usr/bin /bin --symlink usr/lib /lib \
+    --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
+    --proc /proc --dev /dev --tmpfs /tmp \
+    --ro-bind "$REPO_ROOT" "$REPO_ROOT" \
+    --bind "$ENV_DIR" "$ENV_DIR" \
+    --setenv IN_SAGEX_BWRAP 1 \
+    --setenv HOME "$ENV_DIR" \
+    --setenv PATH "$REPO_ROOT/bin:/usr/local/bin:/usr/bin:/bin" \
+    --chdir "$ENV_DIR" \
+    zsh
+fi
+TEMPLATE
+echo "created $envdir"
+echo "then run: cd $envdir && direnv allow ."

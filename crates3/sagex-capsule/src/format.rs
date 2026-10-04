@@ -26,14 +26,14 @@ pub const FLAG_HAS_PERMS: u16 = 0x0008;
 /// EOCD flag bits.
 pub const FLAG_HAS_DEK_TABLE: u16 = 0x0001;
 /// This bit says an archive signature is present: fixed [`ARCHIVE_SIG_LEN`]
-/// bytes follow the central directory. ML-DSA-44 signatures are fixed-size,
+/// bytes follow the central directory. ML-DSA-65 signatures are fixed-size,
 /// so the trailer needs no length prefix.
 pub const FLAG_ARCHIVE_SIG: u16 = 0x0002;
-/// This is how long an ML-DSA-44 signature always is on the wire.
+/// This is how long an ML-DSA-65 signature always is on the wire.
 ///
 /// What it does it lets the reader find the signature without a length
 /// field: it is always exactly this many bytes after the central directory.
-pub const ARCHIVE_SIG_LEN: u64 = 2420;
+pub const ARCHIVE_SIG_LEN: u64 = 3309;
 
 /// Fixed sizes on the wire.
 pub const HEADER_LEN: usize = 16;
@@ -47,7 +47,8 @@ pub const MAX_BELIEVED_ENTRY_COUNT: u32 = 1 << 20;
 
 /// Infile helpers: small wire types plus the two bool-codec functions the
 /// derives need. Nothing floating at module scope.
-mod codec {    use super::MAX_BELIEVED_ENTRY_COUNT;
+mod codec {
+    use super::MAX_BELIEVED_ENTRY_COUNT;
     use binrw::{BinRead, BinResult, BinWrite, Endian};
     use std::io::{Read, Seek, Write};
 
@@ -100,7 +101,10 @@ mod codec {    use super::MAX_BELIEVED_ENTRY_COUNT;
 
     impl From<Vec<u8>> for CountedBytes {
         fn from(blob_bytes: Vec<u8>) -> Self {
-            Self { byte_length: blob_bytes.len() as u32, blob_bytes }
+            Self {
+                byte_length: blob_bytes.len() as u32,
+                blob_bytes,
+            }
         }
     }
 
@@ -139,7 +143,7 @@ pub use codec::CountedBytes;
 /// anything else.
 #[derive(Debug, Clone, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
-#[br(magic = 0x00106E5Au32)]  // == MAGIC
+#[br(magic = 0x00106E5Au32)] // == MAGIC
 pub struct ArchiveHeader {
     pub format_version: u32,
     pub archive_flags: u32,
@@ -148,7 +152,11 @@ pub struct ArchiveHeader {
 
 impl ArchiveHeader {
     pub fn new(archive_flags: u32) -> Self {
-        Self { format_version: VERSION as u32, archive_flags, reserved: 0 }
+        Self {
+            format_version: VERSION as u32,
+            archive_flags,
+            reserved: 0,
+        }
     }
 }
 
@@ -160,7 +168,7 @@ impl ArchiveHeader {
 /// `temp` equivalent), so keep them in sync with the data they describe.
 #[derive(Debug, Clone, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
-#[br(magic = 0x01106E5Au32)]  // == REC_MAGIC
+#[br(magic = 0x01106E5Au32)] // == REC_MAGIC
 pub struct FileRecord {
     pub record_flags: u16,
     pub file_name_nonce: [u8; 12],
@@ -254,7 +262,7 @@ pub struct CentralDir {
 /// 4 + 2 + 2 + 4 + 8 + 8 + 8 + 8 = 44.
 #[derive(Debug, Clone, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
-#[br(magic = 0x00106E5Au32)]  // == MAGIC
+#[br(magic = 0x00106E5Au32)] // == MAGIC
 pub struct Eocd {
     pub version: u16,
     pub flags: u16,

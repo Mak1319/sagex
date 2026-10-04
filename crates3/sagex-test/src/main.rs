@@ -1,6 +1,6 @@
-use sagex_crypto::{MlDsa44, MlKem768, aes::KeyEncapsulation};
+use sagex_crypto::{MlDsa65, aes::KeyEncapsulation};
 
 fn main() {
-    let cap = KeyEncapsulation::new::<MlDsa44>(b"mainak is my name").unwrap();
+    let _cap = KeyEncapsulation::new::<MlDsa65>(b"mainak is my name").unwrap();
     println!("Hello, world!");
 }

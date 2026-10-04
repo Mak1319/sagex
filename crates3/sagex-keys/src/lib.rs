@@ -1,7 +1,7 @@
 use sagex_crypto::aes::{KEY_LEN, KeyEncapsulation, SALT_LEN};
 use serde::{Deserialize, Serialize};
 
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 pub const FORMAT_SIGNATURE: [u8; 4] = [0x5A, 0x6E, 0x10, 0x00];
 pub const VERSION: u32 = 1;
 
@@ -24,10 +24,10 @@ impl InternalKey {
         password: &[u8],
         user_name: String,
     ) -> Result<Self, sagex_crypto::error::SagexCrypotError> {
-        use sagex_crypto::{MlDsa44, MlKem768};
+        use sagex_crypto::{MlDsa65, MlKem768};
         Ok(Self {
             format_version: FORMAT_VERSION,
-            signature_encapsulation: KeyEncapsulation::new::<MlDsa44>(password)?,
+            signature_encapsulation: KeyEncapsulation::new::<MlDsa65>(password)?,
             kem_encapsulation: KeyEncapsulation::new::<MlKem768>(password)?,
             user_name,
         })

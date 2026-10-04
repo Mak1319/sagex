@@ -23,10 +23,13 @@ pub const HASH_RND: u32 = 600_000;
 pub const KEM_EK_LEN: usize = 1184;
 pub const KEM_DK_SEED_LEN: usize = 64;
 pub const KEM_CT_LEN: usize = 1088;
-/// ML-DSA-44 verifying key length.
-pub const DSA44_VK_LEN: usize = 1312;
+/// ML-DSA-65 verifying key length.
+pub const DSA_VK_LEN: usize = 1952;
 
-pub use dsa::{dsa44_sign, dsa44_verify_feed};
+/// ML-DSA-65 signature length.
+pub const DSA_SIG_LEN: usize = 3309;
+
+pub use dsa::{dsa_sign, dsa_verify_feed};
 pub use kem::KemOps;
 
 /// This is the encapsulation which should be used for encapsulating
@@ -263,7 +266,7 @@ pub mod key_algorithm {
     }
 }
 mod dsa {
-    use ml_dsa::{Generate, KeyExport, Keypair, MlDsa44, MlDsa65, SigningKey, VerifyingKey};
+    use ml_dsa::{Generate, KeyExport, Keypair, MlDsa65, SigningKey, VerifyingKey};
 
     use crate::aes::key_algorithm::KeyAlgorithm;
     use crate::error::SResult;
@@ -285,41 +288,24 @@ mod dsa {
         }
     }
 
-    impl KeyAlgorithm for MlDsa44 {
-        type PrivateKey = SigningKey<MlDsa44>;
-        type PublicKey = VerifyingKey<MlDsa44>;
-
-        fn generate() -> (Self::PublicKey, Self::PrivateKey) {
-            let private_key = SigningKey::<MlDsa44>::generate();
-            let verifying_key = private_key.verifying_key();
-            (verifying_key, private_key)
-        }
-        fn private_key_bytes(key: &Self::PrivateKey) -> Vec<u8> {
-            key.to_bytes().to_vec()
-        }
-        fn public_key_bytes(key: &Self::PublicKey) -> Vec<u8> {
-            key.to_bytes().to_vec()
-        }
-    }
-
-    /// Sign a message with an ML-DSA-44 seed, deterministically.
+    /// Sign a message with an ML-DSA-65 seed, deterministically.
     ///
     /// What it does it rebuilds the signing key from its seed and signs
     /// the whole message at once. Create-time data is already resident,
     /// so no streaming is needed on this path; streaming lives only on
     /// the verify side.
-    pub fn dsa44_sign(signing_seed: &[u8], message_bytes: &[u8]) -> SResult<Vec<u8>> {
+    pub fn dsa_sign(signing_seed: &[u8], message_bytes: &[u8]) -> SResult<Vec<u8>> {
         use crate::error::SagexCrypotError::SignatureSignError;
         use digest::Update;
         use ml_dsa::signature::DigestSigner;
-        use ml_dsa::{KeyInit, MlDsa44, SigningKey};
+        use ml_dsa::{KeyInit, MlDsa65, SigningKey};
 
         if signing_seed.len() != 32 {
             return Err(SignatureSignError);
         }
         let mut seed_raw = [0u8; 32];
         seed_raw.copy_from_slice(signing_seed);
-        let signing_key = SigningKey::<MlDsa44>::new(&seed_raw.into());
+        let signing_key = SigningKey::<MlDsa65>::new(&seed_raw.into());
         let produced_signature = signing_key
             .try_sign_digest(|running_hash| {
                 Update::update(running_hash, message_bytes);
@@ -329,13 +315,13 @@ mod dsa {
         Ok(produced_signature.encode().as_slice().to_vec())
     }
 
-    /// Verify an ML-DSA-44 signature over streamed content.
+    /// Verify an ML-DSA-65 signature over streamed content.
     ///
     /// What it does it checks the signature without holding the whole
     /// message: `provide_signed_bytes` is called once and must hand every
     /// signed byte to the hash in order; only reading failures surface as
     /// [`StreamReadError`], everything else is [`SignatureVerifyError`].
-    pub fn dsa44_verify_feed<F>(
+    pub fn dsa_verify_feed<F>(
         sender_public_key_bytes: &[u8],
         signature_bytes: &[u8],
         provide_signed_bytes: F,
@@ -346,14 +332,14 @@ mod dsa {
         use crate::error::SagexCrypotError::{SignatureVerifyError, StreamReadError};
         use digest::Update;
         use ml_dsa::signature::Error as SigError;
-        use ml_dsa::{KeyInit, MlDsa44, Signature, VerifyingKey};
+        use ml_dsa::{KeyInit, MlDsa65, Signature, VerifyingKey};
 
-        let raw_public_key: [u8; crate::aes::DSA44_VK_LEN] = sender_public_key_bytes
+        let raw_public_key: [u8; crate::aes::DSA_VK_LEN] = sender_public_key_bytes
             .try_into()
             .map_err(|_| SignatureVerifyError)?;
-        let sender_public_key = VerifyingKey::<MlDsa44>::new(&raw_public_key.into());
+        let sender_public_key = VerifyingKey::<MlDsa65>::new(&raw_public_key.into());
         let parsed_signature =
-            Signature::<MlDsa44>::try_from(signature_bytes).map_err(|_| SignatureVerifyError)?;
+            Signature::<MlDsa65>::try_from(signature_bytes).map_err(|_| SignatureVerifyError)?;
         let computed_message_hash = sender_public_key
             .compute_mu(
                 |running_hash| {

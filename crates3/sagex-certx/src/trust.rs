@@ -22,8 +22,7 @@ pub async fn load(dir: &Path) -> Result<Vec<PublicKey>, AppError> {
         let bytes = tokio::fs::read(&path)
             .await
             .map_err(|e| AppError::ReadKey(path.clone(), e))?;
-        let key =
-            PublicKey::from_bytes(&bytes).map_err(|e| AppError::BadKey(path.clone(), e))?;
+        let key = PublicKey::from_bytes(&bytes).map_err(|e| AppError::BadKey(path.clone(), e))?;
         keys.push(key);
     }
     Ok(keys)

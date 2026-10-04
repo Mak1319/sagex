@@ -1,12 +1,10 @@
 use std::io::{Read, Seek, SeekFrom};
 
-use sagex_crypto::aes::dsa44_verify_feed;
+use sagex_crypto::aes::dsa_verify_feed;
 use sagex_crypto::error::{SResult, SagexCrypotError};
 
 use crate::error::{CapResult, Error};
-use crate::format::{
-    ARCHIVE_SIG_LEN, FLAG_HAS_SIG, REC_MAGIC, CentralDir, DekTable, FileRecord,
-};
+use crate::format::{ARCHIVE_SIG_LEN, CentralDir, DekTable, FLAG_HAS_SIG, FileRecord, REC_MAGIC};
 
 /// This is the piece size we read at a time while checking.
 ///
@@ -21,39 +19,40 @@ const MAX_CHUNKS_PER_RECORD: u64 = 4_000_000;
 
 // ---------- Walk helpers for the parse phase (small reads, no blobs) ----------
 
-fn checked_add_file_offset(
-    file_position: u64,
-    forward_distance: u64,
-) -> CapResult<u64> {
-    file_position.checked_add(forward_distance).ok_or(Error::RecordReadError)
+fn checked_add_file_offset(file_position: u64, forward_distance: u64) -> CapResult<u64> {
+    file_position
+        .checked_add(forward_distance)
+        .ok_or(Error::RecordReadError)
 }
 
 fn read_u16_from_file<R: Read + Seek>(file_reader: &mut R) -> CapResult<u16> {
     let mut byte_buffer = [0u8; 2];
-    file_reader.read_exact(&mut byte_buffer).map_err(|_| Error::RecordReadError)?;
+    file_reader
+        .read_exact(&mut byte_buffer)
+        .map_err(|_| Error::RecordReadError)?;
     Ok(u16::from_le_bytes(byte_buffer))
 }
 
 fn read_u32_from_file<R: Read + Seek>(file_reader: &mut R) -> CapResult<u32> {
     let mut byte_buffer = [0u8; 4];
-    file_reader.read_exact(&mut byte_buffer).map_err(|_| Error::RecordReadError)?;
+    file_reader
+        .read_exact(&mut byte_buffer)
+        .map_err(|_| Error::RecordReadError)?;
     Ok(u32::from_le_bytes(byte_buffer))
 }
 
-fn seek_reader_to_offset<R: Read + Seek>(
-    file_reader: &mut R,
-    file_offset: u64,
-) -> CapResult<()> {
-    file_reader.seek(SeekFrom::Start(file_offset)).map_err(|_| Error::RecordReadError)?;
+fn seek_reader_to_offset<R: Read + Seek>(file_reader: &mut R, file_offset: u64) -> CapResult<()> {
+    file_reader
+        .seek(SeekFrom::Start(file_offset))
+        .map_err(|_| Error::RecordReadError)?;
     Ok(())
 }
 
-fn read_exact_bytes<R: Read + Seek>(
-    file_reader: &mut R,
-    byte_count: usize,
-) -> CapResult<Vec<u8>> {
+fn read_exact_bytes<R: Read + Seek>(file_reader: &mut R, byte_count: usize) -> CapResult<Vec<u8>> {
     let mut byte_buffer = vec![0u8; byte_count];
-    file_reader.read_exact(&mut byte_buffer).map_err(|_| Error::RecordReadError)?;
+    file_reader
+        .read_exact(&mut byte_buffer)
+        .map_err(|_| Error::RecordReadError)?;
     Ok(byte_buffer)
 }
 
@@ -105,24 +104,28 @@ pub fn verify_file<R: Read + Seek>(
     seek_reader_to_offset(file_reader, record_offset)?;
     let mut record_header_bytes = read_exact_bytes(file_reader, 4)?;
     if u32::from_le_bytes(
-        record_header_bytes[..4].try_into().map_err(|_| Error::MalformedRecord)?,
+        record_header_bytes[..4]
+            .try_into()
+            .map_err(|_| Error::MalformedRecord)?,
     ) != REC_MAGIC
     {
         return Err(Error::MalformedRecord);
     }
     record_header_bytes.extend_from_slice(&read_exact_bytes(file_reader, 2 + 12)?);
     let name_length_raw = read_exact_bytes(file_reader, 2)?;
-    let file_name_length =
-        u16::from_le_bytes([name_length_raw[0], name_length_raw[1]]) as u64;
+    let file_name_length = u16::from_le_bytes([name_length_raw[0], name_length_raw[1]]) as u64;
     // Echo the exact wire bytes, not a re-encoding: the field is u16 on
     // the wire and widening it to u64 once smuggled in 6 phantom zeros.
     record_header_bytes.extend_from_slice(&name_length_raw);
-    record_header_bytes.extend_from_slice(&read_exact_bytes(file_reader, file_name_length as usize)?);
+    record_header_bytes
+        .extend_from_slice(&read_exact_bytes(file_reader, file_name_length as usize)?);
     // method(1) + chunk_size(4) + chunk_count(4) + file_nonce(12) + mode/uid/gid(12)
     let fixed_header_tail = read_exact_bytes(file_reader, 33)?;
-    let chunk_count =
-        u32::from_le_bytes(fixed_header_tail[5..9].try_into().map_err(|_| Error::MalformedRecord)?)
-            as u64;
+    let chunk_count = u32::from_le_bytes(
+        fixed_header_tail[5..9]
+            .try_into()
+            .map_err(|_| Error::MalformedRecord)?,
+    ) as u64;
     if chunk_count > MAX_CHUNKS_PER_RECORD {
         return Err(Error::MalformedRecord);
     }
@@ -135,19 +138,23 @@ pub fn verify_file<R: Read + Seek>(
     for _ in 0..chunk_count {
         let chunk_length = read_u32_from_file(file_reader)?;
         chunk_lengths.push(chunk_length);
-        let current_position =
-            file_reader.stream_position().map_err(|_| Error::RecordReadError)?;
-        seek_reader_to_offset(file_reader, checked_add_file_offset(current_position, chunk_length as u64)?)?;
+        let current_position = file_reader
+            .stream_position()
+            .map_err(|_| Error::RecordReadError)?;
+        seek_reader_to_offset(
+            file_reader,
+            checked_add_file_offset(current_position, chunk_length as u64)?,
+        )?;
     }
     let signature_length = read_u16_from_file(file_reader)? as usize;
     let signature_bytes = read_exact_bytes(file_reader, signature_length)?;
     let error_correction_length = read_u32_from_file(file_reader)? as u64;
-    let error_correction_start =
-        file_reader.stream_position().map_err(|_| Error::RecordReadError)?;
+    let error_correction_start = file_reader
+        .stream_position()
+        .map_err(|_| Error::RecordReadError)?;
     // Feed pass: header, chunk data, error-correction bytes — streamed, nothing held.
-    let chunks_start =
-        checked_add_file_offset(record_offset, record_header_bytes.len() as u64)?;
-    let verification_outcome = dsa44_verify_feed(
+    let chunks_start = checked_add_file_offset(record_offset, record_header_bytes.len() as u64)?;
+    let verification_outcome = dsa_verify_feed(
         sender_public_key_bytes,
         &signature_bytes,
         |feed_bytes_to_hash| {
@@ -196,9 +203,13 @@ pub fn verify_central<R: Read + Seek>(
     // Light structure check on the central header before streaming.
     seek_reader_to_offset(file_reader, central_directory_offset)?;
     let _entry_count = read_u16_from_file(file_reader)?;
-    let verification_outcome = dsa44_verify_feed(
+    let verification_outcome = dsa_verify_feed(
         sender_public_key_bytes,
-        &read_archive_signature_trailer(file_reader, central_directory_offset, central_directory_length)?,
+        &read_archive_signature_trailer(
+            file_reader,
+            central_directory_offset,
+            central_directory_length,
+        )?,
         |feed_bytes_to_hash| {
             seek_hash_reader(file_reader, central_directory_offset)?;
             push_file_piece_to_hash(file_reader, central_directory_length, feed_bytes_to_hash)?;

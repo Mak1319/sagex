@@ -334,3 +334,76 @@ pub fn write_restored_file(
     }
     Ok(output_path)
 }
+
+/// This is every way making a user key pair can fail.
+///
+/// What it does it tells apart a taken name, a crypto problem and
+/// a disk problem, so callers can react without parsing strings.
+#[derive(Debug)]
+pub enum KeyGenError {
+    AlreadyExists(PathBuf),
+    Crypto(String),
+    InputOutput(String),
+}
+
+impl std::fmt::Display for KeyGenError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyExists(path) => {
+                write!(formatter, "key file {} exists", path.display())
+            }
+            Self::Crypto(message) => write!(formatter, "key generation failed: {message}"),
+            Self::InputOutput(message) => write!(formatter, "disk failed: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for KeyGenError {}
+
+/// This is the kunji key maker as a library function.
+///
+/// What it does it makes a fresh password-locked key pair for one user
+/// and writes `<user>.prv` (private, password locked) and `<user>.pub`
+/// (shareable) into the output folder, refusing to overwrite.
+pub fn create_user_keys(
+    user_name: &str,
+    password: &[u8],
+    output_folder: &Path,
+) -> Result<(PathBuf, PathBuf), KeyGenError> {
+    use sagex_keys::{
+        EncapsulatedKey, FORMAT_SIGNATURE, InternalKey, PasswordDerivationStrategy, PublicKey,
+        VERSION,
+    };
+
+    let private_path = output_folder.join(format!("{user_name}.prv"));
+    let public_path = output_folder.join(format!("{user_name}.pub"));
+    if private_path.exists() {
+        return Err(KeyGenError::AlreadyExists(private_path));
+    }
+    if public_path.exists() {
+        return Err(KeyGenError::AlreadyExists(public_path));
+    }
+    let internal_key = InternalKey::new(password, user_name.to_string())
+        .map_err(|error| KeyGenError::Crypto(format!("{error:?}")))?;
+    let wrapped_key = EncapsulatedKey {
+        format_signature: FORMAT_SIGNATURE,
+        version: VERSION,
+        key: internal_key,
+        key_config: None,
+        derived_from: PasswordDerivationStrategy::Password,
+    };
+    std::fs::create_dir_all(output_folder)
+        .map_err(|error| KeyGenError::InputOutput(error.to_string()))?;
+    let private_bytes = wrapped_key
+        .to_bytes()
+        .map_err(KeyGenError::InputOutput)?;
+    std::fs::write(&private_path, private_bytes)
+        .map_err(|error| KeyGenError::InputOutput(error.to_string()))?;
+    let public_key = PublicKey::from(wrapped_key);
+    let public_bytes = public_key
+        .to_bytes()
+        .map_err(KeyGenError::InputOutput)?;
+    std::fs::write(&public_path, public_bytes)
+        .map_err(|error| KeyGenError::InputOutput(error.to_string()))?;
+    Ok((private_path, public_path))
+}

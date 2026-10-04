@@ -2158,10 +2158,13 @@ name = "sagex-certx"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "clap",
  "dotenvy",
  "mongodb",
+ "sagex-archive",
  "sagex-keys",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

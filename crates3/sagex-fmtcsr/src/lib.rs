@@ -12,8 +12,6 @@ mod timestamp;
 #[derive(Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CertificateSigningRequest {
     pub payload: PublicKey,
-    pub signature: Vec<u8>,
-    pub origin: Vec<u8>,
 }
 
 impl CertificateSigningRequest {

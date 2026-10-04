@@ -8,8 +8,14 @@ pub enum AppError {
     BadMongoUri(mongodb::error::Error),
     Mongo(mongodb::error::Error),
     ReadDir(PathBuf, io::Error),
+    // Used once trusted-keys loading is wired into `listen`.
+    #[allow(dead_code)]
     ReadKey(PathBuf, io::Error),
+    // Used once trusted-keys loading is wired into `listen`.
+    #[allow(dead_code)]
     BadKey(PathBuf, String),
+    KeyGen(sagex_archive::KeyGenError),
+    CopyKey(PathBuf, io::Error),
     Bind(io::Error),
     Serve(io::Error),
 }
@@ -25,6 +31,8 @@ impl fmt::Display for AppError {
             Self::ReadDir(dir, e) => write!(f, "cannot read keys dir {}: {e}", dir.display()),
             Self::ReadKey(path, e) => write!(f, "cannot read key {}: {e}", path.display()),
             Self::BadKey(path, e) => write!(f, "invalid key {}: {e}", path.display()),
+            Self::KeyGen(e) => write!(f, "key generation failed: {e}"),
+            Self::CopyKey(path, e) => write!(f, "cannot copy key to {}: {e}", path.display()),
             Self::Bind(e) => write!(f, "failed to bind listener: {e}"),
             Self::Serve(e) => write!(f, "server error: {e}"),
         }
@@ -42,6 +50,8 @@ impl std::error::Error for AppError {
             Self::ReadDir(_, e) => Some(e),
             Self::ReadKey(_, e) => Some(e),
             Self::BadKey(_, _) => None,
+            Self::KeyGen(e) => Some(e),
+            Self::CopyKey(_, e) => Some(e),
             Self::Bind(e) => Some(e),
             Self::Serve(e) => Some(e),
         }

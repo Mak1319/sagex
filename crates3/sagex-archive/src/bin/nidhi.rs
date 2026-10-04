@@ -236,7 +236,7 @@ fn run_create(
             // would never verify. (Signature bytes themselves stay excluded.)
             file_record.record_flags |= sagex_capsule::format::FLAG_HAS_SIG;
             let canonical_bytes = sagex_capsule::verify::file_canonical_bytes(&file_record);
-            let signature_bytes = sagex_crypto::aes::dsa44_sign(signing_seed, &canonical_bytes)
+            let signature_bytes = sagex_crypto::aes::dsa_sign(signing_seed, &canonical_bytes)
                 .map_err(|error| ArchiveError::Crypto(format!("{error:?}")))?;
             file_record.signature_length = signature_bytes.len() as u16;
             file_record.signature_bytes = signature_bytes;
@@ -309,7 +309,7 @@ fn run_create(
         let canonical_bytes =
             sagex_capsule::verify::central_canonical_bytes(&central_directory, &dek_table)
                 .map_err(|error| ArchiveError::Crypto(format!("{error:?}")))?;
-        let archive_signature = sagex_crypto::aes::dsa44_sign(signing_seed, &canonical_bytes)
+        let archive_signature = sagex_crypto::aes::dsa_sign(signing_seed, &canonical_bytes)
             .map_err(|error| ArchiveError::Crypto(format!("{error:?}")))?;
         archive_bytes.extend_from_slice(&archive_signature);
         println!(

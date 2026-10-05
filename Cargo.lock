@@ -5132,6 +5132,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sagex-archlib"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "postcard",
+ "sagex-capsule",
+ "sagex-crypto",
+ "sagex-keys",
+ "sha2 0.11.0",
+ "signature",
+ "walkdir",
+]
+
+[[package]]
 name = "sagex-capsule"
 version = "0.1.0"
 dependencies = [

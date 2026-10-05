@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/sagex-archive",
+    "crates/sagex-archive", "crates/sagex-archlib",
     "crates/sagex-capsule",
     "crates/sagex-crypto",
     "crates/sagex-keys",

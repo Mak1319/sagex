@@ -1,173 +1,123 @@
-use std::rc::Rc;
+//! Bottom message composer: mode tabs + telemetry + input + toolbar + send.
+use eframe::egui;
+use crate::{icons::Icon, theme::*};
+use super::primitives::{chip, icon_button, mono};
 
-use gpui::{App, ClickEvent, IntoElement, Render, Window, div, prelude::*};
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ComposerTab {
+    Message,
+    Markdown,
+}
 
-use crate::{
-    components::{IconKind, icon_el},
-    theme::palette as p,
-};
-
-type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
-
-/// Bottom message composer: mode tab + draft + toolbar + SEND.
-/// Real GPUI view (`impl Render`).
 pub struct Composer {
-    pub draft: String,
-    pub markdown_tab: bool,
-    pub on_tab: Option<ClickHandler>,
-    pub on_send: Option<ClickHandler>,
+    pub text: String,
+    pub tab: ComposerTab,
 }
 
 impl Composer {
-    pub fn new(draft: String, markdown_tab: bool) -> Self {
-        Self {
-            draft,
-            markdown_tab,
-            on_tab: None,
-            on_send: None,
-        }
+    pub fn new() -> Self {
+        Self { text: String::new(), tab: ComposerTab::Message }
     }
 
-    pub fn on_tab(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
-        self.on_tab = Some(Rc::new(f));
-        self
-    }
-
-    pub fn on_send(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
-        self.on_send = Some(Rc::new(f));
-        self
-    }
-}
-
-impl Render for Composer {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let markdown_tab = self.markdown_tab;
-        let mut tab = div()
-            .id("composer-tab")
-            .px_2()
-            .py_1()
-            .text_xs()
-            .cursor_pointer()
-            .border_1()
-            .border_color(p::primary())
-            .text_color(p::ink())
-            .child(if markdown_tab { "MARKDOWN*".to_owned() } else { "MESSAGE".to_owned() });
-        if let Some(f) = self.on_tab.clone() {
-            tab = tab.on_click(move |ev, window, cx| f(ev, window, cx));
-        }
-        let send_label = div()
-            .id("composer-send-label")
-            .flex()
-            .items_center()
-            .gap_1()
-            .px_3()
-            .py_1()
-            .text_sm()
-            .bg(p::primary())
-            .text_color(gpui::rgb(0xffffff))
-            .cursor_pointer()
-            .child("SEND".to_owned())
-            .child(icon_el(IconKind::Send, 14.0, false, false));
-        let mut send = div().flex().items_center().bg(p::primary());
-        if let Some(f) = self.on_send.clone() {
-            let g = f.clone();
-            let labeled = send_label.on_click(move |ev, window, cx| g(ev, window, cx));
-            send = send.child(labeled).child(
-                div()
-                    .px_1()
-                    .py_1()
-                    .text_sm()
-                    .text_color(gpui::rgb(0xffffff))
-                    .child("▾".to_owned()),
+    fn tab_button(&mut self, ui: &mut egui::Ui, tab: ComposerTab, label: &str) {
+        let active = self.tab == tab;
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(92.0, 24.0), egui::Sense::click());
+        if active {
+            ui.painter().rect_filled(rect, 2.0, LOWEST);
+            ui.painter().rect_stroke(
+                rect,
+                2.0,
+                egui::Stroke::new(1.0, OUTLINE_VAR),
+                egui::StrokeKind::Inside,
             );
-        } else {
-            send = send.child(send_label);
+            // active tab underline
+            ui.painter().line_segment(
+                [
+                    egui::pos2(rect.min.x + 4.0, rect.max.y - 1.0),
+                    egui::pos2(rect.max.x - 4.0, rect.max.y - 1.0),
+                ],
+                egui::Stroke::new(2.0, PRIMARY),
+            );
         }
-        let draft = std::mem::take(&mut self.draft);
-        div()
-            .p_3()
-            .gap_1()
-            .flex()
-            .flex_col()
-            .border_t_1()
-            .border_color(p::hairline())
-            .bg(p::panel())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(tab)
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .text_xs()
-                                    .text_color(p::ink_faint())
-                                    .child(
-                                        if markdown_tab {
-                                            "MESSAGE"
-                                        } else {
-                                            "MARKDOWN"
-                                        }
-                                        .to_owned(),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .py_1()
-                            .text_xs()
-                            .border_1()
-                            .border_color(p::hairline())
-                            .text_color(p::ink_dim())
-                            .child("SYNTAX: GLSL / MD ACTIVE".to_owned()),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            .px_2()
-                            .py_1()
-                            .text_sm()
-                            .border_1()
-                            .border_color(p::hairline())
-                            .text_color(if draft.is_empty() {
-                                p::ink_faint()
-                            } else {
-                                p::ink()
-                            })
-                            .child(if draft.is_empty() {
-                                "Type a message...  (Enter sends)".to_owned()
-                            } else {
-                                draft
-                            }),
-                    )
-                    .child(send),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .child(icon_el(IconKind::Attach, 15.0, false, false))
-                    .child(icon_el(IconKind::Image, 15.0, false, false))
-                    .child(icon_el(IconKind::Code, 15.0, false, false))
-                    .child(icon_el(IconKind::Bold, 15.0, false, false))
-                    .child(icon_el(IconKind::Italic, 15.0, false, false))
-                    .child(icon_el(IconKind::Strike, 15.0, false, false))
-                    .child(icon_el(IconKind::List, 15.0, false, false))
-                    .child(icon_el(IconKind::Number, 15.0, false, false))
-                    .child(icon_el(IconKind::Link, 15.0, false, false))
-                    .child(icon_el(IconKind::Mention, 15.0, false, false)),
-            )
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::monospace(9.5),
+            if active { PRIMARY } else { OUTLINE },
+        );
+        if resp.clicked() {
+            self.tab = tab;
+        }
+        let _ = resp.on_hover_text(label);
+    }
+
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::NONE
+            .fill(LOWEST)
+            .stroke(egui::Stroke::new(1.0, OUTLINE_VAR))
+            .corner_radius(4)
+            .inner_margin(egui::Margin::same(8))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    self.tab_button(ui, ComposerTab::Message, "MESSAGE");
+                    self.tab_button(ui, ComposerTab::Markdown, "MARKDOWN");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        chip(ui, "GLSL/MD", ON_VARIANT, LOW);
+                        ui.label(mono(ui, 9.5, "SYNTAX:"));
+                    });
+                });
+                ui.separator();
+                // full-width input
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.text)
+                        .hint_text("Type technical parameter or command...")
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.separator();
+                ui.horizontal(|ui| {
+                    for (ic, tip) in [
+                        (Icon::Attachment, "Attach CAD file"),
+                        (Icon::MediaImage, "Insert raster image"),
+                        (Icon::Code, "Insert code block"),
+                    ] {
+                        icon_button(ui, ic, 14.0, OUTLINE, tip);
+                        ui.add_space(4.0);
+                    }
+                    ui.separator();
+                    ui.label(egui::RichText::new("B").size(11.0).color(ON_SURFACE).strong());
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("I").size(11.0).color(ON_SURFACE).italics());
+                    ui.add_space(4.0);
+                    ui.separator();
+                    for (ic, tip) in [
+                        (Icon::Bookmark, "Bookmark"),
+                        (Icon::Quote, "Quote"),
+                        (Icon::Forward, "Forward"),
+                    ] {
+                        icon_button(ui, ic, 14.0, OUTLINE, tip);
+                        ui.add_space(4.0);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // SEND first (rightmost) so it can never be clipped
+                        let (rect, resp) = ui.allocate_exact_size(
+                            egui::vec2(86.0, 28.0),
+                            egui::Sense::click(),
+                        );
+                        ui.painter().rect_filled(rect, 4.0, PRIMARY);
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "SEND",
+                            egui::FontId::monospace(10.0),
+                            egui::Color32::WHITE,
+                        );
+                        let _ = resp.on_hover_text("Transmit (Enter)");
+                        ui.label(mono(ui, 8.5, "Enter to send"));
+                    });
+                });
+            });
     }
 }

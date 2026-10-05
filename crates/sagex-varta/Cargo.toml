@@ -3,10 +3,6 @@ name = "sagex-varta"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "sagex-varta"
-path = "src/main.rs"
-
 [dependencies]
-anyhow = "1"
-gpui = "0.2.2"
+eframe = "0.36"
+resvg = "0.45"

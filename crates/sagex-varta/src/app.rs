@@ -1,70 +1,39 @@
-use std::collections::HashMap;
+//! App composition: rail + left + right + center (+ bottom status).
+use eframe::egui;
+use crate::{components::composer::Composer, fonts, panels, svg_loader, theme::ThemeMode};
 
-use crate::models::{Channel, ChannelId, Message, MsgBody, Route};
-
-pub struct AppState {
-    pub route: Route,
-    pub channels: Vec<Channel>,
-    pub feed: HashMap<ChannelId, Vec<Message>>,
-    pub search: String,
-    pub search_focus: bool,
-    pub draft: String,
-    pub markdown_tab: bool,
-    pub inspector_open: bool,
-    pub show_context: bool,
-    pub show_actions: bool,
+pub struct VartaApp {
+    left: panels::left::LeftState,
+    right: panels::right::RightState,
+    center: panels::center::CenterState,
+    theme: ThemeMode,
+    fonts_done: bool,
 }
 
-impl AppState {
+impl VartaApp {
     pub fn new() -> Self {
         Self {
-            route: Route::Channel(ChannelId(4)),
-            channels: crate::data::channels(),
-            feed: crate::data::messages(),
-            search: String::new(),
-            search_focus: false,
-            draft: String::new(),
-            markdown_tab: false,
-            inspector_open: true,
-            show_context: false,
-            show_actions: false,
+            left: panels::left::LeftState::new(),
+            right: panels::right::RightState::new(),
+            center: panels::center::CenterState { composer: Composer::new() },
+            theme: ThemeMode::default(),
+            fonts_done: false,
         }
     }
+}
 
-    pub fn navigate(&mut self, route: Route) {
-        self.route = route;
-        if let Route::Channel(id) = route {
-            for c in self.channels.iter_mut() {
-                if c.id == id {
-                    c.unread = 0;
-                }
-            }
+impl eframe::App for VartaApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        crate::theme::apply(ui.ctx(), self.theme);
+        if !self.fonts_done {
+            fonts::install(ui.ctx());
+            svg_loader::SvgLoader::install(ui.ctx());
+            self.fonts_done = true;
         }
-    }
-
-    pub fn active_channel(&self) -> Option<&Channel> {
-        match self.route {
-            Route::Channel(id) => self.channels.iter().find(|c| c.id == id),
-            _ => None,
-        }
-    }
-
-    pub fn send_draft(&mut self) {
-        let text = std::mem::take(&mut self.draft);
-        let text = text.trim().to_owned();
-        if text.is_empty() {
-            return;
-        }
-        let owned: &'static str = Box::leak(text.into_boxed_str());
-        let msg = Message {
-            author: "You",
-            time: "now",
-            badge: "AUTHOR",
-            mine: true,
-            body: MsgBody::Text(owned),
-        };
-        if let Route::Channel(id) = self.route {
-            self.feed.entry(id).or_default().push(msg);
-        }
+        panels::rail::show(ui, &mut self.left.mode, &mut self.theme);
+        panels::chrome::bottom(ui);
+        panels::left::show(ui, &mut self.left);
+        panels::right::show(ui, &mut self.right);
+        panels::center::show(ui, &mut self.center);
     }
 }

@@ -35,3 +35,4 @@ layout
 *.pub
 *.sgx
 crates/sagex-archive/src2
+Scr*

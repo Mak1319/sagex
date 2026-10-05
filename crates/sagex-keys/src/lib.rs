@@ -56,6 +56,10 @@ impl KeyInternal {
     pub fn kem_key(&self) -> KeyEncapsulation {
         return self.kem_key.clone();
     }
+
+    pub fn user_name(&self) -> &str {
+        return &self.user_name;
+    }
 }
 
 

@@ -49,6 +49,13 @@ impl KeyInternal {
             kem_key: kem_enc,
         })
     }
+
+    pub fn dsa_key(&self) -> KeyEncapsulation {
+        return self.dsa_key.clone();
+    }
+    pub fn kem_key(&self) -> KeyEncapsulation {
+        return self.kem_key.clone();
+    }
 }
 
 

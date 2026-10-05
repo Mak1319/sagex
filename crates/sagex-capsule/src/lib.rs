@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use error::CapsuleError;
 use sagex_crypto::aes::{EncryptionBuffer, KeyBytes, NonceBytes, key_derivation::KeyDerivation};
 use serde::{Deserialize, Serialize};
@@ -48,9 +50,26 @@ pub struct EndOfCentralDirectory {
     #[serde(with = "postcard::fixint::le")]
     pub central_directory_size: u64,
 
-    // Checksum related
-    #[serde(with = "postcard::fixint::le")]
-    pub checksum: u32,
+    // Checksum related (SHA-256 over all bytes preceding this EOCD)
+    pub checksum: [u8; 32],
+}
+
+impl Default for EndOfCentralDirectory {
+    fn default() -> Self {
+        EndOfCentralDirectory {
+            magic_number: EOCD_MAGIC_FORMAT,
+            version: CURRENT_VERSION,
+            table: false,
+            table_size: 0,
+            table_offset: 0,
+            signature: false,
+            signature_offset: 0,
+            signature_size: 0,
+            central_directory_offset: 0,
+            central_directory_size: 0,
+            checksum: [0u8; 32],
+        }
+    }
 }
 
 /// This will index all the files
@@ -180,6 +199,26 @@ pub struct Signature {
     pub user_name: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct LicenseTable {
+    pub magic_format: MagicBytes,
+    pub entries: HashMap<u32, LicenseEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LicenseEntry {
+    pub key_id: u32,
+    pub user_name: String,
+    pub dek_entries: HashMap<String, DekEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DekEntry {
+    pub key_id: u32,
+    pub kem_cipher: Vec<u8>,
+    pub dek_cipher: Vec<u8>,
+    pub dek_nonce: NonceBytes,
+}
 
 pub trait ToEncrypted {
     fn encrypt(&mut self, key: KeyBytes) -> Result<(), CapsuleError>;

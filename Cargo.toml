@@ -1,3 +1,10 @@
 [workspace]
-members = []
+members = [
+    "crates/sagex-archive",
+    "crates/sagex-capsule",
+    "crates/sagex-crypto",
+    "crates/sagex-keys",
+    "crates/sagex-test",
+    "crates/sagex-varta",
+]
 resolver = "3"

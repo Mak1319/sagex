@@ -29,3 +29,5 @@ environments/
 
 .envrc 
 /bin
+opencode.json
+layout

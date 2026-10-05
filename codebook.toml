@@ -1,7 +1,14 @@
 words = [
+    "Cli",
     "cipherbytes",
     "ciphertext",
     "decapsulate",
+    "fixint",
+    "kdf",
     "kem",
+    "kunji",
+    "mainak",
+    "nidhi",
     "passphase",
+    "sagex",
 ]

@@ -5126,6 +5126,8 @@ dependencies = [
  "sagex-capsule",
  "sagex-crypto",
  "sagex-keys",
+ "sha2 0.11.0",
+ "signature",
  "walkdir",
 ]
 

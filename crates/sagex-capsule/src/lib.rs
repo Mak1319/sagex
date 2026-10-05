@@ -312,4 +312,36 @@ pub mod helper {
 
         Ok(storage[ecc_start..].to_vec())
     }
+
+    /// Split a `calculate_ecc` payload back into its data region.
+    ///
+    /// Re-encodes parity from the received data shards and compares it
+    /// against the stored parity: mismatch means corruption beyond what
+    /// can be verified here. Returns the data region on success.
+    ///
+    /// NOTE: the data region keeps the zero padding `calculate_ecc` added
+    /// when the original chunk was not a multiple of `DATA_SHARDS` bytes.
+    /// The original chunk length is not stored, so callers cannot strip
+    /// the padding; length-sensitive checks (CRC) must account for that.
+    pub fn repair_ecc(payload: &[u8]) -> Result<Vec<u8>, String> {
+        let total = DATA_SHARDS + PARITY_SHARDS;
+        if payload.is_empty() || payload.len() % total != 0 {
+            return Err("ecc payload size is not a whole shard group".to_string());
+        }
+        let shard_size = payload.len() / total;
+        let data_len = DATA_SHARDS * shard_size;
+
+        let rs = ReedSolomon::new(DATA_SHARDS, PARITY_SHARDS).map_err(|e| e.to_string())?;
+
+        let mut buf = vec![0u8; payload.len()];
+        buf[..data_len].copy_from_slice(&payload[..data_len]);
+        {
+            let mut shards: Vec<&mut [u8]> = buf.chunks_exact_mut(shard_size).collect();
+            rs.encode(&mut shards).map_err(|e| e.to_string())?;
+        }
+        if buf[data_len..] != payload[data_len..] {
+            return Err("ecc parity mismatch: chunk failed verification".to_string());
+        }
+        Ok(buf[..data_len].to_vec())
+    }
 }

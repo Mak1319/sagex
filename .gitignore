@@ -31,3 +31,7 @@ environments/
 /bin
 opencode.json
 layout
+*.prv 
+*.pub
+*.sgx
+crates/sagex-archive/src2

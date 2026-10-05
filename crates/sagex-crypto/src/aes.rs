@@ -5,8 +5,10 @@ use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use zeroize::ZeroizeOnDrop;
 
-pub use ml_dsa::{MlDsa65, SigningKey};
-pub use ml_kem::{DecapsulationKey, Encapsulate, EncapsulationKey, MlKem768, TryKeyInit};
+pub use ml_dsa::{MlDsa65, Signature, SigningKey, VerifyingKey};
+pub use ml_dsa::KeyInit as DsaKeyInit;
+pub use ml_kem::{Ciphertext, Decapsulate, DecapsulationKey, Encapsulate, EncapsulationKey, MlKem768, TryKeyInit};
+pub use ml_kem::kem::TryDecapsulate;
 
 use crate::aes::key_derivation::KeyDerivation;
 use crate::error::Error::{AesDecryptionError, AesEncryptionError, AesNonceDerivationError};

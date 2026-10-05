@@ -1,17 +1,18 @@
 use clap::{Args, Parser, Subcommand};
-use flate2::{Compression, write::DeflateEncoder};
+use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
 use promptuity::{Promptuity, Term, prompts::Password, themes::FancyTheme};
 use sagex_capsule::{
     CDFH_MAGIC_FORMAT, CHUNK_SIZE, CURRENT_VERSION, CentralDirectory, CentralDirectoryFileHeader,
     ChunkTag, CipherChunk, DEK_TABLE_FORMAT, DekEntry, EOCD_MAGIC_FORMAT, EndOfCentralDirectory,
     LicenseEntry, LicenseTable, LocalFileHeader, NonCipherChunk, SIGNATUR_FORMAT, Signature,
-    ToEncrypted, helper::calculate_ecc,
+    ToEncrypted, helper::{calculate_ecc, repair_ecc},
 };
 use sagex_crypto::aes::{
-    Encapsulate as _, EncapsulationKey, EncryptionBuffer, MlDsa65, TryKeyInit as _, kem::MlKem768,
-    key::FromDerived, key_derivation::KeyDerivation,
+    Ciphertext, Decapsulate as _, DsaKeyInit as _, Encapsulate as _, EncapsulationKey,
+    EncryptionBuffer, MlDsa65, Signature as MlDsaSignature, TryKeyInit as _, VerifyingKey,
+    key::FromDerived, key_derivation::KeyDerivation, kem::MlKem768,
 };
-use signature::Signer as _;
+use signature::{Signer as _, Verifier as _};
 use std::{
     collections::HashMap,
     fs::OpenOptions,
@@ -72,7 +73,10 @@ struct RestoreArgs {
     key: PathBuf,
 
     #[arg(long = "trust", value_name = "PATH")]
-    trust: PathBuf,
+    trust: Option<PathBuf>,
+
+    #[arg(long = "license", value_name = "FILE")]
+    license: Option<PathBuf>,
 }
 
 fn main() {
@@ -632,6 +636,538 @@ fn create(args: CreateArgs) {
     // End of central directory
 }
 
-fn restore(_args: RestoreArgs) {
-    todo!()
+/// Archives at or above this size must carry a verifiable signature.
+const LARGE_ARCHIVE: u64 = 256 * 1024 * 1024; // 256 MiB
+
+/// Verify the archive signature against a trust key.
+/// Returns the signer identity on success, reason on failure.
+fn verify_signature(
+    file: &mut std::fs::File,
+    eocd: &EndOfCentralDirectory,
+    trust_path: &PathBuf,
+) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(eocd.signature_offset))
+        .map_err(|e| format!("seek signature: {e}"))?;
+    let mut sig_bytes = vec![0u8; eocd.signature_size as usize];
+    file.read_exact(&mut sig_bytes)
+        .map_err(|e| format!("read signature: {e}"))?;
+    let sig: Signature =
+        postcard::from_bytes(&sig_bytes).map_err(|_| "cannot parse signature record".to_string())?;
+    if sig.magic != SIGNATUR_FORMAT {
+        return Err("bad signature magic".to_string());
+    }
+    let trust_bytes = std::fs::read(trust_path)
+        .map_err(|e| format!("cannot read trust key {}: {e}", trust_path.display()))?;
+    let trust_ext: sagex_keys::KeyExternal =
+        postcard::from_bytes(&trust_bytes).map_err(|_| "not a valid key file".to_string())?;
+    let trust_pub = match trust_ext.internals {
+        sagex_keys::KeyType::Public(p) => p,
+        _ => return Err("trust key must be public".to_string()),
+    };
+    let vk = VerifyingKey::<MlDsa65>::new_from_slice(&trust_pub.dsa_key)
+        .map_err(|_| "invalid DSA trust key".to_string())?;
+    let digest = hash_prefix(file, eocd.signature_offset)
+        .map_err(|e| format!("cannot hash signed range: {e}"))?;
+    let ml_sig = MlDsaSignature::<MlDsa65>::try_from(sig.signature.as_slice())
+        .map_err(|_| "malformed ML-DSA signature".to_string())?;
+    vk.verify(&digest, &ml_sig)
+        .map_err(|_| "cryptographic verification failed".to_string())?;
+    if sig.user_name != trust_pub.user_name {
+        return Err("signer identity mismatch".to_string());
+    }
+    Ok(sig.user_name)
 }
+
+fn restore(args: RestoreArgs) {
+    use std::io::{Read, Seek, SeekFrom};
+
+    // Phase 0: open archive, tail-scan the EOCD.
+    let mut file = match std::fs::File::open(&args.input) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("Cannot open archive {}: {e}", args.input.display());
+            return;
+        }
+    };
+    let file_len = match file.seek(SeekFrom::End(0)) {
+        Ok(n) => n,
+        Err(e) => {
+            println!("Cannot size archive: {e}");
+            return;
+        }
+    };
+    let tail_len = file_len.min(8192);
+    if let Err(e) = file.seek(SeekFrom::Start(file_len - tail_len)) {
+        println!("Cannot seek archive: {e}");
+        return;
+    }
+    let mut tail = vec![0u8; tail_len as usize];
+    if let Err(e) = file.read_exact(&mut tail) {
+        println!("Cannot read archive tail: {e}");
+        return;
+    }
+    let eocd_magic = [0x5Au8, 0x6E, 0x10, 0x01];
+    let eocd_rel = match tail.windows(4).rposition(|w| w == eocd_magic) {
+        Some(p) => p,
+        None => {
+            println!("No end-of-central-directory found: not an archive");
+            return;
+        }
+    };
+    let eocd: EndOfCentralDirectory = match postcard::from_bytes(&tail[eocd_rel..]) {
+        Ok(e) => e,
+        Err(_) => {
+            println!("Cannot parse end-of-central-directory");
+            return;
+        }
+    };
+    if eocd.magic_number != EOCD_MAGIC_FORMAT || eocd.version != CURRENT_VERSION {
+        println!("Bad EOCD magic or version");
+        return;
+    }
+    let eocd_start = file_len - (tail_len - eocd_rel as u64);
+
+    // Phase 1: checksum tripwire (warn + salvage, never fatal by itself).
+    let intact = match hash_prefix(&mut file, eocd_start) {
+        Ok(d) if d == eocd.checksum => {
+            println!("checksum OK");
+            true
+        }
+        Ok(_) => {
+            println!(
+                "WARNING: archive checksum mismatch — file modified; attempting ECC-assisted salvage"
+            );
+            false
+        }
+        Err(e) => {
+            println!("Cannot checksum archive: {e}");
+            return;
+        }
+    };
+    let large = file_len >= LARGE_ARCHIVE;
+
+    // Phase 2: signature policy over signed/intact/large/trust.
+    if !eocd.signature {
+        if !intact {
+            println!("WARNING: checksum mismatch and no signature present; aborting");
+            return;
+        }
+        if large {
+            println!("WARNING: archives >= 256 MiB require a signature; aborting");
+            return;
+        }
+    } else {
+        let required = large || !intact;
+        match args.trust.as_ref() {
+            Some(tp) => match verify_signature(&mut file, &eocd, tp) {
+                Ok(signer) => println!("signature OK (signer: {signer})"),
+                Err(e) => {
+                    println!("Signature verification FAILED ({e}); aborting");
+                    return;
+                }
+            },
+            None if required => {
+                println!(
+                    "WARNING: signature verification required (large archive or checksum mismatch) but --trust not provided; aborting"
+                );
+                return;
+            }
+            None => println!("note: signed archive, skipping verification (--trust not given)"),
+        }
+    }
+
+    // Phase 3: central directory + DEK table source.
+    if let Err(e) = file.seek(SeekFrom::Start(eocd.central_directory_offset)) {
+        println!("Cannot seek central directory: {e}");
+        return;
+    }
+    let mut cd_buf = vec![0u8; eocd.central_directory_size as usize];
+    if let Err(e) = file.read_exact(&mut cd_buf) {
+        println!("Cannot read central directory: {e}");
+        return;
+    }
+    let central_directory: CentralDirectory = match postcard::from_bytes(&cd_buf) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("Cannot parse central directory");
+            return;
+        }
+    };
+
+    let table: Option<LicenseTable> = if eocd.table {
+        // Self-licensed: table embedded in the archive.
+        if let Err(e) = file.seek(SeekFrom::Start(eocd.table_offset)) {
+            println!("Cannot seek DEK table: {e}");
+            return;
+        }
+        let mut buf = vec![0u8; eocd.table_size as usize];
+        if let Err(e) = file.read_exact(&mut buf) {
+            println!("Cannot read DEK table: {e}");
+            return;
+        }
+        match postcard::from_bytes(&buf) {
+            Ok(t) => Some(t),
+            Err(_) => {
+                println!("Cannot parse DEK table");
+                return;
+            }
+        }
+    } else {
+        // External license sidecar required.
+        let lic_path = match args.license.as_ref() {
+            Some(p) => p.clone(),
+            None => {
+                println!("Archive needs an external license file; pass --license <FILE>");
+                return;
+            }
+        };
+        let lic_bytes = match std::fs::read(&lic_path) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("Cannot read license file {}: {e}", lic_path.display());
+                return;
+            }
+        };
+        let lic_table: LicenseTable = match postcard::from_bytes(&lic_bytes) {
+            Ok(t) => t,
+            Err(_) => {
+                println!("Cannot parse license file: {}", lic_path.display());
+                return;
+            }
+        };
+        Some(lic_table)
+    };
+
+    // Phase 4: recover the DEK (skipped for unencrypted archives).
+    let need_dek = central_directory.entries.iter().any(|e| e.encryption);
+    let mut dek: [u8; 32] = [0u8; 32];
+    if need_dek {
+        let table = match table.as_ref() {
+            Some(t) => t,
+            None => {
+                println!("Encrypted archive but no DEK table available");
+                return;
+            }
+        };
+        let mut term = Term::default();
+        let mut theme = FancyTheme::default();
+        let mut p = Promptuity::new(&mut term, &mut theme);
+        if let Err(e) = p.with_intro("Unlock archive key").begin() {
+            println!("Cannot start prompt: {e}");
+            return;
+        }
+        let mut pw = Password::new(format!("Password for {}", args.key.display()));
+        let password: String = match p.prompt(&mut pw) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Prompt aborted: {e}");
+                return;
+            }
+        };
+        if let Err(e) = p.with_outro("Key unlocked").finish() {
+            println!("Cannot finish prompt: {e}");
+            return;
+        }
+        let prv_bytes = match std::fs::read(&args.key) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("Cannot read key {}: {e}", args.key.display());
+                return;
+            }
+        };
+        let prv_ext: sagex_keys::KeyExternal = match postcard::from_bytes(&prv_bytes) {
+            Ok(k) => k,
+            Err(_) => {
+                println!("Not a valid key file: {}", args.key.display());
+                return;
+            }
+        };
+        let dek_raw: Vec<u8> = match prv_ext.internals {
+            sagex_keys::KeyType::Private(k) => {
+                let name = k.user_name().to_string();
+                let derived = match k.kem_key().decrypt_vault(password.as_bytes()) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        println!("Cannot unlock archive key (wrong password?)");
+                        return;
+                    }
+                };
+                let dk = match MlKem768::private_from_derived(derived) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        println!("Cannot rebuild KEM key");
+                        return;
+                    }
+                };
+                let dek_entry = table
+                    .entries
+                    .values()
+                    .flat_map(|le| le.dek_entries.get(&name))
+                    .next();
+                let dek_entry = match dek_entry {
+                    Some(d) => d,
+                    None => {
+                        println!("No license for identity '{name}'");
+                        return;
+                    }
+                };
+                let ct: Ciphertext<MlKem768> = match dek_entry.kem_cipher.as_slice().try_into() {
+                    Ok(c) => c,
+                    Err(_) => {
+                        println!("Malformed KEM ciphertext");
+                        return;
+                    }
+                };
+                let ss = dk.decapsulate(&ct);
+                let ss_bytes: [u8; 32] = match ss.as_slice().try_into() {
+                    Ok(b) => b,
+                    Err(_) => {
+                        println!("Bad shared secret length");
+                        return;
+                    }
+                };
+                match EncryptionBuffer::decrypt(
+                    &dek_entry.dek_cipher,
+                    ss_bytes,
+                    dek_entry.dek_nonce,
+                ) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        println!("DEK unwrap failed");
+                        return;
+                    }
+                }
+            }
+            _ => {
+                println!("Archive key must be private: {}", args.key.display());
+                return;
+            }
+        };
+        if dek_raw.len() != 32 {
+            println!("Unwrapped DEK has bad length");
+            return;
+        }
+        dek.copy_from_slice(&dek_raw);
+    }
+
+    // Phase 5: extract entries (greedy).
+    let mut ok_count = 0u32;
+    let mut skip_count = 0u32;
+    for mut header in central_directory.entries {
+        if header.encryption {
+            if header.decrypt(dek).is_err() {
+                println!("Cannot decrypt header; skipping entry");
+                skip_count += 1;
+                continue;
+            }
+        }
+        let name_bytes = header.file_name.clone();
+        let rel = match sanitize_rel(&name_bytes) {
+            Some(r) => r,
+            None => {
+                println!("Unsafe entry path; skipping");
+                skip_count += 1;
+                continue;
+            }
+        };
+        let dest = args.out_dir.join(rel);
+        if header.is_directory {
+            if let Err(e) = std::fs::create_dir_all(&dest) {
+                println!("Cannot create dir {}: {e}", dest.display());
+                skip_count += 1;
+                continue;
+            }
+            set_mode(&dest, header.permission);
+            ok_count += 1;
+            continue;
+        }
+        // Chunk-blob range: create writes final_buffer THEN header_bytes,
+        // and records the offset AFTER both.
+        let blob_end = match header
+            .local_file_header_offset
+            .checked_sub(header.local_file_header_size)
+        {
+            Some(v) => v,
+            None => {
+                println!("Bad entry offsets; skipping");
+                skip_count += 1;
+                continue;
+            }
+        };
+        let blob_start = match blob_end.checked_sub(header.encrypted_sized) {
+            Some(v) => v,
+            None => {
+                println!("Bad entry offsets; skipping");
+                skip_count += 1;
+                continue;
+            }
+        };
+        if let Err(e) = file.seek(SeekFrom::Start(blob_start)) {
+            println!("Cannot seek entry data: {e}");
+            skip_count += 1;
+            continue;
+        }
+        let mut blob = vec![0u8; header.encrypted_sized as usize];
+        if let Err(e) = file.read_exact(&mut blob) {
+            println!("Cannot read entry data: {e}");
+            skip_count += 1;
+            continue;
+        }
+        // Sequential tag+chunk parse.
+        let mut wire: Vec<u8> = Vec::new();
+        let mut pos = 0usize;
+        let mut chunk_ok = true;
+        while pos < blob.len() {
+            let (tag, rest): (ChunkTag, &[u8]) = match postcard::take_from_bytes(&blob[pos..]) {
+                Ok(v) => v,
+                Err(_) => {
+                    println!("Bad chunk tag; skipping entry");
+                    chunk_ok = false;
+                    break;
+                }
+            };
+            let used = blob.len() - pos - rest.len();
+            pos += used;
+            if tag.size as usize > rest.len() {
+                println!("Chunk overruns entry; skipping entry");
+                chunk_ok = false;
+                break;
+            }
+            let chunk_raw = &rest[..tag.size as usize];
+            pos += tag.size as usize;
+            let payload: Vec<u8> = if header.encryption {
+                let chunk: CipherChunk = match postcard::from_bytes(chunk_raw) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        println!("Bad cipher chunk; skipping entry");
+                        chunk_ok = false;
+                        break;
+                    }
+                };
+                let mut data = chunk.buffer;
+                if !matches!(
+                    header.ecc,
+                    sagex_capsule::ErrorCorrectionMethod::None
+                ) {
+                    data = match repair_ecc(&data) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            println!("ECC repair failed ({e}); skipping entry");
+                            chunk_ok = false;
+                            break;
+                        }
+                    };
+                }
+                match EncryptionBuffer::decrypt(&data, dek, chunk.nonce) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        println!("Chunk decrypt failed; skipping entry");
+                        chunk_ok = false;
+                        break;
+                    }
+                }
+            } else {
+                let chunk: NonCipherChunk = match postcard::from_bytes(chunk_raw) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        println!("Bad plain chunk; skipping entry");
+                        chunk_ok = false;
+                        break;
+                    }
+                };
+                if !matches!(
+                    header.ecc,
+                    sagex_capsule::ErrorCorrectionMethod::None
+                ) {
+                    match repair_ecc(&chunk.buffer) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            println!("ECC repair failed ({e}); skipping entry");
+                            chunk_ok = false;
+                            break;
+                        }
+                    }
+                } else {
+                    chunk.buffer
+                }
+            };
+            wire.extend_from_slice(&payload);
+        }
+        if !chunk_ok {
+            skip_count += 1;
+            continue;
+        }
+        if crc32fast::hash(&wire) != header.crc32_compressed {
+            println!("CRC mismatch on stored form; skipping entry");
+            skip_count += 1;
+            continue;
+        }
+        let raw: Vec<u8> = match header.compression {
+            sagex_capsule::CompressionMethod::None => wire,
+            sagex_capsule::CompressionMethod::Deflate => {
+                let mut dec = DeflateDecoder::new(Vec::new());
+                use std::io::Write as _;
+                if let Err(e) = dec.write_all(&wire) {
+                    println!("Decompress failed ({e}); skipping entry");
+                    skip_count += 1;
+                    continue;
+                }
+                match dec.finish() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        println!("Decompress finish failed ({e}); skipping entry");
+                        skip_count += 1;
+                        continue;
+                    }
+                }
+            }
+        };
+        if crc32fast::hash(&raw) != header.crc32_uncompressed {
+            println!("CRC mismatch on content; skipping entry");
+            skip_count += 1;
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                println!("Cannot create parent {}: {e}", parent.display());
+                skip_count += 1;
+                continue;
+            }
+        }
+        if let Err(e) = std::fs::write(&dest, &raw) {
+            println!("Cannot write {}: {e}", dest.display());
+            skip_count += 1;
+            continue;
+        }
+        set_mode(&dest, header.permission);
+        ok_count += 1;
+    }
+
+    println!("restore done: {ok_count} ok, {skip_count} skipped");
+}
+
+/// Reject absolute paths and `..` escapes; return path relative-ized for `--od`.
+fn sanitize_rel(name_bytes: &[u8]) -> Option<PathBuf> {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let p = PathBuf::from(OsStr::from_bytes(name_bytes));
+    let mut rel = PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            std::path::Component::Normal(c) => rel.push(c),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    Some(rel)
+}
+
+#[cfg(unix)]
+fn set_mode(path: &PathBuf, mode: u16) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode as u32));
+}
+
+#[cfg(not(unix))]
+fn set_mode(_path: &PathBuf, _mode: u16) {}

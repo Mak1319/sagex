@@ -8,8 +8,8 @@ services:
     ports:
       - "27017:27017"
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-sagex}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASS:-sagex-dev-only}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASS}
     volumes:
       - mongo-data:/data/db
     networks:
@@ -30,8 +30,8 @@ services:
       - "9001:9001" # Console
     command: ["/data"]
     environment:
-      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-sagexadmin}
-      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-sagex-dev-only-change-me}
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY}
       - RUSTFS_ADDRESS=:9000
       - RUSTFS_CONSOLE_ADDRESS=:9001
       - RUSTFS_CONSOLE_ENABLE=true

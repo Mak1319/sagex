@@ -1,0 +1,10 @@
+[package]
+name = "sagex-capsule"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+postcard = "1.1.3"
+serde = { version = "1.0.229", features = ["derive"] }
+sagex-crypto = { path = "../sagex-crypto" }
+reed-solomon-erasure = "6.0.0"

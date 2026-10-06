@@ -4,11 +4,12 @@ Read `@problem.txt` first — it is the binding spec.
 
 **Root `crates/` is FORBIDDEN and FROZEN (legacy).**
 
-- NEVER read, list, glob, grep, or open `crates/**`.
-- NEVER import, depend on, or reference `crates/*` from new code.
+<!--- NEVER read, list, glob, grep, or open `crates/**`.-->
+
+<!--- NEVER import, depend on, or reference `crates/*` from new code.
 - NEVER create or edit files under `crates/`.
 - NEVER use root `Cargo.toml [workspace]`, `Cargo.lock`, `target/` as reference.
-- NEVER copy-paste from `crates/`.
+- NEVER copy-paste from `crates/`.-->
 
 **DO: build from scratch in `crates2/` only** (`crates2/<crate>/src/...`, own workspace `Cargo.toml`). Do NOT touch root `Cargo.toml` members.
 

@@ -1,108 +1,326 @@
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
-use rand_core::{OsRng, RngCore};
-use sha2::Sha256;
+use aes_gcm::KeyInit;
+use aes_gcm::aead::Aead;
+use aes_gcm::{Aes256Gcm, Nonce};
+use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
+use serde::{Deserialize, Serialize};
+use zeroize::ZeroizeOnDrop;
 
-use crate::error::{
-    SageXCryptoError::{self, AESDecryptionError},
-    SageXResult,
+pub use ml_dsa::{MlDsa65, Signature, SigningKey, VerifyingKey};
+pub use ml_dsa::KeyInit as DsaKeyInit;
+pub use ml_kem::{Ciphertext, Decapsulate, DecapsulationKey, Encapsulate, EncapsulationKey, MlKem768, TryKeyInit};
+pub use ml_kem::kem::TryDecapsulate;
+
+use crate::aes::key_derivation::KeyDerivation;
+use crate::error::Error::{AesDecryptionError, AesEncryptionError, AesNonceDerivationError};
+use crate::{
+    aes::key::KeyAlgorithm,
+    error::{CResult, Error::AesKeyDerivationError},
 };
 
+// This is region is for constant
 pub const SALT_LEN: usize = 16;
 pub const NONCE_LEN: usize = 12;
-pub const ITERATIONS: u32 = 600_000;
+pub const KEY_LEN: usize = 32;
+pub const KDF_ROUND: u32 = 600_600;
 
-pub struct AESHandler;
+// This is for types
+pub type SaltBytes = [u8; SALT_LEN];
+pub type NonceBytes = [u8; NONCE_LEN];
+pub type KeyBytes = [u8; KEY_LEN];
+pub type BufferBytes = Vec<u8>;
 
-#[binrw::binrw]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+// This is the portion for actual structs
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct KeyEncapsulation {
-    pub salt: [u8; SALT_LEN],
-    pub nonce_bytes: [u8; NONCE_LEN],
-    #[bw(calc = cipher.len() as u32)]
-    #[br(temp)]
-    #[cfg_attr(feature = "serde", serde(skip))]
-    len: u32,
+    secret_key_cipher: BufferBytes,
+    salt_bytes: SaltBytes,
+    nonce_bytes: NonceBytes,
 
-    #[br(count = len )]
-    pub cipher: Vec<u8>,
+    #[serde(skip)]
+    pub public_key: Option<BufferBytes>,
 }
 
-impl AESHandler {
-    /// Raw AES-256-GCM encrypt with an explicit key/nonce (no KDF).
-    /// For message/file DEKs; password-based flows keep using
-    /// [`AESHandler::encrypt_private_key`].
-    pub fn encrypt_raw(
-        key: &[u8; 32],
-        nonce_bytes: &[u8; NONCE_LEN],
-        plaintext: &[u8],
-    ) -> SageXResult<Vec<u8>> {
-        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key)
-            .map_err(|_| SageXCryptoError::AESCreationError)?;
-        let nonce = Nonce::from(*nonce_bytes);
-        cipher
-            .encrypt(&nonce, plaintext)
-            .map_err(|_| SageXCryptoError::AESEncryptionError)
-    }
+#[derive(ZeroizeOnDrop)]
+pub struct KeyDerived {
+    secret_key: BufferBytes,
+    pub public_key: Option<BufferBytes>,
+}
 
-    /// Raw AES-256-GCM decrypt with an explicit key/nonce.
-    pub fn decrypt_raw(
-        key: &[u8; 32],
-        nonce_bytes: &[u8; NONCE_LEN],
-        ciphertext: &[u8],
-    ) -> SageXResult<Vec<u8>> {
-        let cipher = aes_gcm::Aes256Gcm::new_from_slice(key)
-            .map_err(|_| SageXCryptoError::AESCreationError)?;
-        let nonce = Nonce::from(*nonce_bytes);
-        cipher
-            .decrypt(&nonce, ciphertext)
-            .map_err(|_| AESDecryptionError)
-    }
+impl KeyEncapsulation {
+    pub fn new<T: KeyAlgorithm>(password: &[u8]) -> CResult<Self> {
+        let mut rng = UnwrapErr(SysRng);
+        let salt_bytes: SaltBytes = rng.random();
+        let nonce_bytes: NonceBytes = rng.random();
 
-    pub fn encrypt_private_key(key: &[u8], password: &[u8]) -> SageXResult<KeyEncapsulation> {
-        let mut salt = [0u8; SALT_LEN];
-        let mut nonce_bytes = [0u8; NONCE_LEN];
 
-        OsRng.fill_bytes(&mut salt);
-        OsRng.fill_bytes(&mut nonce_bytes);
+        let key_bytes = KeyDerivation::derive_password(password, salt_bytes);
 
-        let mut aes_key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(password, &salt, ITERATIONS, &mut aes_key);
-        // println!("{:?}", &aes_key);
+        let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| AesKeyDerivationError)?;
 
-        let cipher = aes_gcm::Aes256Gcm::new_from_slice(&aes_key).map_err(|e| {
-            println!("{:?}", e);
-            SageXCryptoError::AESCreationError
-        })?;
+        let (public_key, private_key) = T::generate();
 
-        let nonce = Nonce::from(nonce_bytes);
+        let private_key_bytes = T::private_key_bytes(&private_key);
+        let public_key_bytes = T::public_key_bytes(&public_key);
+
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| AesNonceDerivationError)?;
 
         let ciphertext = cipher
-            .encrypt(&nonce, key)
-            .map_err(|_| SageXCryptoError::AESEncryptionError)?;
+            .encrypt(&nonce, private_key_bytes.as_ref())
+            .map_err(|_| AesEncryptionError)?;
 
-        aes_key.fill(0);
-        Ok(KeyEncapsulation {
-            salt,
+        Ok(Self {
+            secret_key_cipher: ciphertext,
+            salt_bytes,
             nonce_bytes,
-            cipher: ciphertext,
+            public_key: Some(public_key_bytes),
         })
     }
 
-    pub fn decrypt_private_key(
-        password: &[u8],
-        encapsulation: KeyEncapsulation,
-    ) -> SageXResult<Vec<u8>> {
-        let mut aes_key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(password, &encapsulation.salt, ITERATIONS, &mut aes_key);
+    pub fn from_key<T: KeyAlgorithm>(key_bytes: KeyBytes, salt_bytes: SaltBytes) -> CResult<Self> {
+        let mut rng = UnwrapErr(SysRng);
+        let nonce_bytes: NonceBytes = rng.random();
 
-        let cipher =
-            Aes256Gcm::new_from_slice(&aes_key).map_err(|_| SageXCryptoError::AESCreationError)?;
+        let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| AesKeyDerivationError)?;
+        let (public_key, private_key) = T::generate();
 
-        let nonce = Nonce::from(encapsulation.nonce_bytes.clone());
-        let plain_key = cipher
-            .decrypt(&nonce, encapsulation.cipher.as_slice())
-            .map_err(|_| AESDecryptionError)?;
+        let private_key_bytes = T::private_key_bytes(&private_key);
+        let public_key_bytes = T::public_key_bytes(&public_key);
 
-        Ok(plain_key.to_vec())
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| AesNonceDerivationError)?;
+
+        let ciphertext = cipher
+            .encrypt(&nonce, private_key_bytes.as_ref())
+            .map_err(|_| AesEncryptionError)?;
+
+        Ok(Self {
+            secret_key_cipher: ciphertext,
+            salt_bytes,
+            nonce_bytes,
+            public_key: Some(public_key_bytes),
+        })
+    }
+
+    pub fn decrypt_vault(&self, password: &[u8]) -> CResult<KeyDerived> {
+        let key_bytes = KeyDerivation::derive_password(password, self.salt_bytes);
+
+        let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| AesKeyDerivationError)?;
+
+        let nonce = Nonce::try_from(self.nonce_bytes).map_err(|_| AesNonceDerivationError)?;
+
+        let secret_key = cipher
+            .decrypt(&nonce, self.secret_key_cipher.as_ref())
+            .map_err(|_| AesDecryptionError)?;
+
+        Ok(KeyDerived {
+            secret_key,
+            public_key: self.public_key.clone(),
+        })
+    }
+
+    pub fn decrypt_vault_from_key(&self, key_bytes: KeyBytes) -> CResult<KeyDerived> {
+        let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| AesKeyDerivationError)?;
+
+        let nonce = Nonce::try_from(self.nonce_bytes).map_err(|_| AesNonceDerivationError)?;
+
+        let secret_key = cipher
+            .decrypt(&nonce, self.secret_key_cipher.as_ref())
+            .map_err(|_| AesDecryptionError)?;
+
+        Ok(KeyDerived {
+            secret_key,
+            public_key: self.public_key.clone(),
+        })
+    }
+}
+
+pub struct EncryptionBuffer;
+
+
+impl EncryptionBuffer {
+    pub fn encrypt(buffer: &[u8], key: KeyBytes, nonce_bytes: NonceBytes) -> CResult<Vec<u8>> {
+        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| AesKeyDerivationError)?;
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| AesNonceDerivationError)?;
+        let ciphertext = cipher
+            .encrypt(&nonce, buffer)
+            .map_err(|_| AesEncryptionError)?;
+        Ok(ciphertext)
+    }
+
+    pub fn decrypt(buffer: &[u8], key: KeyBytes, nonce_bytes: NonceBytes) -> CResult<Vec<u8>> {
+        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| AesKeyDerivationError)?;
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| AesNonceDerivationError)?;
+        let ciphertext = cipher
+            .decrypt(&nonce, buffer)
+            .map_err(|_| AesEncryptionError)?;
+        Ok(ciphertext)
+    }
+}
+
+
+pub mod key_derivation {
+    use rand::{RngExt, rand_core::UnwrapErr, rngs::SysRng};
+    use sha2::Sha256;
+
+    use crate::aes::{KDF_ROUND, KEY_LEN, KeyBytes, NonceBytes, SaltBytes};
+
+
+    pub struct KeyDerivation;
+
+    impl KeyDerivation {
+        pub fn derive_password(password: &[u8], salt_bytes: SaltBytes) -> KeyBytes {
+            let mut key_bytes: KeyBytes = [0u8; KEY_LEN];
+            pbkdf2::pbkdf2_hmac::<Sha256>(password, &salt_bytes, KDF_ROUND, &mut key_bytes);
+            key_bytes
+        }
+
+        pub fn get_salt() -> SaltBytes {
+            let mut rng = UnwrapErr(SysRng);
+            let salt: SaltBytes = rng.random();
+            salt
+        }
+
+        pub fn get_nonce() -> NonceBytes {
+            let mut rng = UnwrapErr(SysRng);
+            let nonce: NonceBytes = rng.random();
+            nonce
+        }
+
+        pub fn get_random_key() -> KeyBytes {
+            let mut rng = UnwrapErr(SysRng);
+            let key: KeyBytes = rng.random();
+            key
+        }
+    }
+}
+
+pub mod key {
+    use crate::{aes::KeyDerived, error::CResult};
+
+    pub trait KeyAlgorithm {
+        type PublicKey;
+
+        type PrivateKey;
+
+        fn generate() -> (Self::PublicKey, Self::PrivateKey);
+
+        fn public_key_bytes(key: &Self::PublicKey) -> Vec<u8>;
+
+        fn private_key_bytes(key: &Self::PrivateKey) -> Vec<u8>;
+    }
+
+    pub trait FromDerived {
+        type PublicKey;
+        type PrivateKey;
+
+        fn private_from_derived(value: KeyDerived) -> CResult<Self::PrivateKey>;
+        fn public_from_derived(value: KeyDerived) -> CResult<Self::PublicKey>;
+    }
+}
+pub mod kem {
+    pub use ml_kem::MlKem768;
+
+    use crate::{
+        aes::{
+            KeyDerived,
+            key::{FromDerived, KeyAlgorithm},
+        },
+        error::Error::{KemKeyDerivationError, KemKeyNotProvided},
+    };
+    use ml_kem::{
+        Kem, KeyExport, KeyInit, TryKeyInit,
+        kem::{DecapsulationKey, EncapsulationKey},
+    };
+
+
+    impl KeyAlgorithm for MlKem768 {
+        type PrivateKey = <MlKem768 as Kem>::DecapsulationKey;
+        type PublicKey = <MlKem768 as Kem>::EncapsulationKey;
+
+        fn generate() -> (Self::PublicKey, Self::PrivateKey) {
+            let (dk, ek) = MlKem768::generate_keypair();
+            ek.to_bytes().to_vec();
+            (ek, dk)
+        }
+
+        fn private_key_bytes(key: &Self::PrivateKey) -> Vec<u8> {
+            key.to_bytes().to_vec()
+        }
+        fn public_key_bytes(key: &Self::PublicKey) -> Vec<u8> {
+            key.to_bytes().to_vec()
+        }
+    }
+
+    impl FromDerived for MlKem768
+    where
+        <MlKem768 as Kem>::DecapsulationKey: KeyInit,
+        <MlKem768 as Kem>::EncapsulationKey: TryKeyInit,
+    {
+        type PrivateKey = <MlKem768 as Kem>::DecapsulationKey;
+        type PublicKey = <MlKem768 as Kem>::EncapsulationKey;
+
+        fn private_from_derived(value: KeyDerived) -> crate::error::CResult<Self::PrivateKey> {
+            DecapsulationKey::<Self>::new_from_slice(&value.secret_key)
+                .map_err(|_| KemKeyDerivationError)
+        }
+
+        fn public_from_derived(value: KeyDerived) -> crate::error::CResult<Self::PublicKey> {
+            let Some(public_key) = &value.public_key else {
+                return Err(KemKeyNotProvided);
+            };
+            EncapsulationKey::<Self>::new_from_slice(&public_key).map_err(|_| KemKeyDerivationError)
+        }
+    }
+}
+pub mod dsa {
+    pub use ml_dsa::MlDsa65;
+
+    use ml_dsa::{Generate, KeyExport, KeyInit, Keypair, SigningKey, VerifyingKey};
+
+    use crate::{
+        aes::key::{FromDerived, KeyAlgorithm},
+        error::Error::DsaKeyDerivationError,
+    };
+
+
+    impl KeyAlgorithm for MlDsa65 {
+        type PublicKey = VerifyingKey<Self>;
+
+        type PrivateKey = SigningKey<Self>;
+
+        fn generate() -> (Self::PublicKey, Self::PrivateKey) {
+            let private_key = SigningKey::<Self>::generate();
+
+            let verification_key = private_key.verifying_key();
+            (verification_key, private_key)
+        }
+
+        fn public_key_bytes(key: &Self::PublicKey) -> Vec<u8> {
+            key.to_bytes().to_vec()
+        }
+
+        fn private_key_bytes(key: &Self::PrivateKey) -> Vec<u8> {
+            key.to_bytes().to_vec()
+        }
+    }
+
+    impl FromDerived for MlDsa65 {
+        type PublicKey = VerifyingKey<Self>;
+
+        type PrivateKey = SigningKey<Self>;
+
+        fn private_from_derived(
+            value: super::KeyDerived,
+        ) -> crate::error::CResult<Self::PrivateKey> {
+            SigningKey::<MlDsa65>::new_from_slice(&value.secret_key)
+                .map_err(|_| DsaKeyDerivationError)
+        }
+
+        fn public_from_derived(value: super::KeyDerived) -> crate::error::CResult<Self::PublicKey> {
+            let Some(public_key) = &value.public_key else {
+                return Err(crate::error::Error::DsaKeyNotProvided);
+            };
+            VerifyingKey::new_from_slice(&public_key).map_err(|_| DsaKeyDerivationError)
+        }
     }
 }

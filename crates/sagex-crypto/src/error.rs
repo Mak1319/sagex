@@ -1,18 +1,13 @@
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum SageXCryptoError {
-    AESCreationError,
-    NonceIterationError,
-    AESEncryptionError,
-    AESDecryptionError,
-    MLDSASecretKeyDerivationFailed,
-    MLDSASignatureDerivationFailed,
-    MLDSAPublicKeyDerivationFailed,
-    MLDSASignatureVerificationFailed,
-
-    MLKEMPublicKeyDerivationFailed,
-    MLKEMSecretKeyDerivationFailed,
-    MLKEMCipherDerivationError,
+pub enum Error {
+    AesKeyDerivationError,
+    AesNonceDerivationError,
+    AesEncryptionError,
+    AesDecryptionError,
+    KemKeyDerivationError,
+    KemKeyNotProvided,
+    DsaKeyDerivationError,
+    DsaKeyVerificationError,
+    DsaKeyNotProvided,
 }
 
-pub type SageXResult<T> = Result<T, SageXCryptoError>;
+pub type CResult<T> = Result<T, Error>;

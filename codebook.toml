@@ -1,6 +1,16 @@
 words = [
+    "Cli",
+    "Varta",
     "cipherbytes",
+    "ciphertext",
     "decapsulate",
+    "eocd",
+    "fixint",
+    "kdf",
     "kem",
+    "kunji",
+    "mainak",
+    "nidhi",
     "passphase",
+    "sagex",
 ]

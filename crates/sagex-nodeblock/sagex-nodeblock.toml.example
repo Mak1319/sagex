@@ -1,0 +1,36 @@
+node_id = "validator-1"
+api_listen = "0.0.0.0:9443"
+peer_listen = "0.0.0.0:9444"
+
+[database]
+path = "nodeblock.sqlite3"
+
+[tls]
+# Supply offline-provisioned PEM files. The gateway CA must only issue the gateway's client cert.
+server_certificate = "server.crt.pem"
+server_private_key = "server.key.pem"
+gateway_ca = "gateway-ca.crt.pem"
+validator_ca = "validator-ca.crt.pem"
+peer_client_certificate = "validator-client.crt.pem"
+peer_client_private_key = "validator-client.key.pem"
+
+[validator]
+# Replace with this validator's 32-byte ML-DSA-65 seed in hex; never commit real key material.
+signing_seed_hex = "REPLACE_WITH_64_HEX_CHARACTERS"
+
+# List every other validator. Use four or more nodes in the cluster. The verifying keys are
+# ML-DSA-65 public keys (hex). Each address is that peer's mTLS endpoint.
+[[peers]]
+id = "validator-2"
+address = "https://validator-2.example:9444"
+verifying_key_hex = "REPLACE_WITH_VALIDATOR_2_ML_DSA_PUBLIC_KEY_HEX"
+
+[[peers]]
+id = "validator-3"
+address = "https://validator-3.example:9444"
+verifying_key_hex = "REPLACE_WITH_VALIDATOR_3_ML_DSA_PUBLIC_KEY_HEX"
+
+[[peers]]
+id = "validator-4"
+address = "https://validator-4.example:9444"
+verifying_key_hex = "REPLACE_WITH_VALIDATOR_4_ML_DSA_PUBLIC_KEY_HEX"

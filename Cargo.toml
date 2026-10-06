@@ -1,12 +1,16 @@
 [workspace]
 members = [
     "crates/sagex-archive",
-    "crates/sagex-archlib", "crates/sagex-authsrv",
-    "crates/sagex-capsule", "crates/sagex-chatsrv",
+    "crates/sagex-archlib",
+    "crates/sagex-authsrv",
+    "crates/sagex-capsule",
+    "crates/sagex-chatsrv",
     "crates/sagex-crypto",
     "crates/sagex-csrfmt",
     "crates/sagex-keys",
     "crates/sagex-test",
-    "crates/sagex-varta", "crates/sagex-varta2",
+    "crates/sagex-varta",
+    "crates/sagex-l1wm",
+    "crates/sagex-nodeblock",
 ]
 resolver = "3"

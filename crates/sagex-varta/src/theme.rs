@@ -1,132 +1,211 @@
-//! DESIGN.md "Blueprint Precision" tokens (light theme).
-#![allow(dead_code)]
-use eframe::egui;
+//! Blueprint Precision theme — single source of truth for color.
+//! All components read tokens from here via `cx`. No hardcoded colors
+//! in component files.
 
-// surfaces
-pub const SURFACE: egui::Color32 = hex(0xF8, 0xF9, 0xFF);
-pub const SURFACE_DIM: egui::Color32 = hex(0xCB, 0xDB, 0xF5);
-pub const LOWEST: egui::Color32 = egui::Color32::WHITE;
-pub const LOW: egui::Color32 = hex(0xEF, 0xF4, 0xFF);
-pub const CONTAINER: egui::Color32 = hex(0xE5, 0xEE, 0xFF);
-pub const HIGH: egui::Color32 = hex(0xDC, 0xE9, 0xFF);
-pub const HIGHEST: egui::Color32 = hex(0xD3, 0xE4, 0xFE);
-// ink
-pub const ON_SURFACE: egui::Color32 = hex(0x0B, 0x1C, 0x30);
-pub const ON_VARIANT: egui::Color32 = hex(0x43, 0x46, 0x55);
-pub const OUTLINE: egui::Color32 = hex(0x73, 0x76, 0x86);
-pub const OUTLINE_VAR: egui::Color32 = hex(0xC3, 0xC6, 0xD7);
-// roles
-pub const PRIMARY: egui::Color32 = hex(0x00, 0x4A, 0xC6);
-pub const PRIMARY_CTR: egui::Color32 = hex(0x25, 0x63, 0xEB);
-pub const ON_PRIMARY_CTR: egui::Color32 = hex(0xEE, 0xEF, 0xFF);
-pub const SECONDARY: egui::Color32 = hex(0x56, 0x5E, 0x74);
-pub const SECONDARY_CTR: egui::Color32 = hex(0xDA, 0xE2, 0xFD);
-pub const TERTIARY_CTR: egui::Color32 = hex(0x00, 0x75, 0x9F);
-pub const TERTIARY_BG: egui::Color32 = hex(0xE1, 0xF2, 0xFF);
-pub const ERROR: egui::Color32 = hex(0xBA, 0x1A, 0x1A);
-pub const ERROR_CTR: egui::Color32 = hex(0xFF, 0xDA, 0xD6);
-pub const ERROR_ON_CTR: egui::Color32 = hex(0x93, 0x00, 0x0A);
-pub const PRIMARY_FIXED: egui::Color32 = hex(0xDB, 0xE1, 0xFF);
-pub const PRIMARY_FIXED_DIM: egui::Color32 = hex(0xB4, 0xC5, 0xFF);
-pub const ON_PRIMARY_FIXED: egui::Color32 = hex(0x00, 0x17, 0x4B);
-// semantics
-pub const SUCCESS: egui::Color32 = hex(0x05, 0x96, 0x69);
-pub const SUCCESS_BG: egui::Color32 = hex(0xD1, 0xFA, 0xE5);
-pub const WARN: egui::Color32 = hex(0xD9, 0x77, 0x06);
-pub const WARN_BG: egui::Color32 = hex(0xFE, 0xF3, 0xC7);
-// derived
-pub const ACTIVE_ROW: egui::Color32 = hex(0xE8, 0xF0, 0xFE);
-pub const AMBER: egui::Color32 = hex(0x92, 0x40, 0x0E);
-pub const AMBER_BG: egui::Color32 = hex(0xFF, 0xFB, 0xEB);
+use gpui_kit::{App, Global, Rgba};
 
-const fn hex(r: u8, g: u8, b: u8) -> egui::Color32 {
-    egui::Color32::from_rgb(r, g, b)
+fn c(r: u8, g: u8, b: u8) -> Rgba {
+    Rgba {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a: 1.0,
+    }
 }
 
-/// UI theme mode, toggled from the rail.
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThemeMode {
-    #[default]
-    Light,
-    Dark,
-    System,
+/// Full DESIGN.md color + shape + spacing tokens.
+#[derive(Clone, Copy)]
+pub struct BlueprintTheme {
+    // surfaces
+    pub surface: Rgba,
+    pub surface_dim: Rgba,
+    pub surface_bright: Rgba,
+    pub lowest: Rgba,
+    pub low: Rgba,
+    pub container: Rgba,
+    pub high: Rgba,
+    pub highest: Rgba,
+    pub background: Rgba,
+    pub card: Rgba,
+    pub inset: Rgba,
+    pub canvas: Rgba,
+    // ink
+    pub on_surface: Rgba,
+    pub on_variant: Rgba,
+    pub ink: Rgba,
+    pub muted: Rgba,
+    pub slate: Rgba,
+    // lines
+    pub line: Rgba,
+    pub line_strong: Rgba,
+    pub outline: Rgba,
+    // brand
+    pub primary: Rgba,
+    pub on_primary: Rgba,
+    pub primary_container: Rgba,
+    pub cobalt: Rgba,
+    // semantics
+    pub success: Rgba,
+    pub warning: Rgba,
+    pub critical: Rgba,
+    // code + accent hues sourced from the approved reference palette
+    // (stitch code.html tailwind scale); kept here so components
+    // never hardcode colors.
+    pub violet: Rgba,
+    pub code_plain: Rgba,
+    /// White wash at 40% over the canvas (message card resting fill).
+    pub card_wash: Rgba,
+    /// White hairline at 30% for dividers on primary fills.
+    pub on_primary_dim: Rgba,
+    // shape (px)
+    pub radius_sm: f32,
+    pub radius: f32,
+    pub radius_md: f32,
+    pub radius_lg: f32,
 }
 
-impl ThemeMode {
-    pub fn next(self) -> Self {
-        match self {
-            ThemeMode::Light => ThemeMode::Dark,
-            ThemeMode::Dark => ThemeMode::System,
-            ThemeMode::System => ThemeMode::Light,
+impl Default for BlueprintTheme {
+    fn default() -> Self {
+        Self::light()
+    }
+}
+
+impl BlueprintTheme {
+    pub fn light() -> Self {
+        Self {
+            surface: c(0xf8, 0xf9, 0xff),
+            surface_dim: c(0xcb, 0xdb, 0xf5),
+            surface_bright: c(0xf8, 0xf9, 0xff),
+            lowest: c(0xff, 0xff, 0xff),
+            low: c(0xef, 0xf4, 0xff),
+            container: c(0xe5, 0xee, 0xff),
+            high: c(0xdc, 0xe9, 0xff),
+            highest: c(0xd3, 0xe4, 0xfe),
+            background: c(0xf8, 0xf9, 0xff),
+            card: c(0xff, 0xff, 0xff),
+            inset: c(0xf1, 0xf5, 0xf9),
+            canvas: c(0xf8, 0xfa, 0xfc),
+            on_surface: c(0x0b, 0x1c, 0x30),
+            on_variant: c(0x43, 0x46, 0x55),
+            ink: c(0x0b, 0x1c, 0x30),
+            muted: c(0x64, 0x74, 0x8b),
+            slate: c(0x0f, 0x17, 0x2a),
+            line: c(0xe2, 0xe8, 0xf0),
+            line_strong: c(0xcb, 0xd5, 0xe1),
+            outline: c(0x73, 0x76, 0x86),
+            primary: c(0x00, 0x4a, 0xc6),
+            on_primary: c(0xff, 0xff, 0xff),
+            primary_container: c(0x25, 0x63, 0xeb),
+            cobalt: c(0x1d, 0x4e, 0xd8),
+            success: c(0x05, 0x96, 0x69),
+            warning: c(0xd9, 0x77, 0x06),
+            critical: c(0xdc, 0x26, 0x26),
+            violet: c(0x93, 0x33, 0xea),
+            code_plain: c(0x1e, 0x29, 0x3b),
+            card_wash: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.4,
+            },
+            on_primary_dim: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.3,
+            },
+            radius_sm: 2.0,
+            radius: 4.0,
+            radius_md: 6.0,
+            radius_lg: 8.0,
         }
     }
 }
 
-fn light_visuals() -> egui::Visuals {
-    let mut v = egui::Visuals::light();
-    v.panel_fill = LOWEST;
-    v.window_fill = LOWEST;
-    v.extreme_bg_color = LOW;
-    v.code_bg_color = LOW;
-    v.faint_bg_color = CONTAINER;
-    v.widgets.noninteractive.bg_fill = SURFACE;
-    v.widgets.inactive.bg_fill = LOW;
-    v.widgets.hovered.bg_fill = ACTIVE_ROW;
-    v.widgets.active.bg_fill = PRIMARY_FIXED;
-    v.selection.bg_fill = PRIMARY_FIXED;
-    v.selection.stroke = egui::Stroke::new(1.0, PRIMARY);
-    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, OUTLINE_VAR);
-    v
+impl Global for BlueprintTheme {}
+
+/// Pastel tile tint (avatar chips, role chips): background wash,
+/// strong foreground ink, hairline border. Values mirror the
+/// reference palette's 50/700/200 steps per hue.
+#[derive(Clone, Copy)]
+pub struct Tint {
+    pub bg: Rgba,
+    pub fg: Rgba,
+    pub border: Rgba,
 }
 
-fn dark_visuals() -> egui::Visuals {
-    let mut v = egui::Visuals::dark();
-    v.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x1E, 0x2A, 0x45);
-    v.widgets.active.bg_fill = egui::Color32::from_rgb(0x1E, 0x3A, 0x6E);
-    v.selection.bg_fill = egui::Color32::from_rgb(0x1E, 0x3A, 0x6E);
-    v.selection.stroke = egui::Stroke::new(1.0, PRIMARY_CTR);
-    v
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TintColor {
+    Red,
+    Blue,
+    Emerald,
+    Purple,
+    Orange,
+    Cyan,
+    Slate,
+    Indigo,
+    Amber,
 }
 
-// sizes (px, from prototype @1440x900)
-// column grid: 50px rail | >=300 panel | 1fr center | >=300 panel
-pub const RAIL_W: f32 = 50.0;
-pub const LEFT_W: f32 = 300.0;
-pub const RIGHT_W: f32 = 300.0;
-pub const PANEL_MIN: f32 = 300.0;
-pub const DOCK_W: f32 = 36.0;
-pub const AVATAR: f32 = 28.0;
-pub const ROW_H: f32 = 52.0;
-
-pub mod type_ {
-    pub const LABEL_SM: f32 = 10.0;
-    pub const LABEL_MD: f32 = 11.0;
-    pub const BODY_SM: f32 = 12.0;
-    pub const BODY_MD: f32 = 13.0;
-    pub const CODE: f32 = 11.0;
-    pub const HEAD_SM: f32 = 15.0;
+impl BlueprintTheme {
+    pub fn tint(&self, color: TintColor) -> Tint {
+        let _ = self;
+        match color {
+            TintColor::Red => Tint {
+                bg: c(0xfe, 0xf2, 0xf2),
+                fg: c(0xb9, 0x1c, 0x1c),
+                border: c(0xfe, 0xca, 0xca),
+            },
+            TintColor::Blue => Tint {
+                bg: c(0xef, 0xf6, 0xff),
+                fg: c(0x1d, 0x4e, 0xd8),
+                border: c(0xbf, 0xdb, 0xfe),
+            },
+            TintColor::Emerald => Tint {
+                bg: c(0xec, 0xfd, 0xf5),
+                fg: c(0x04, 0x78, 0x57),
+                border: c(0xa7, 0xf3, 0xd0),
+            },
+            TintColor::Purple => Tint {
+                bg: c(0xfa, 0xf5, 0xff),
+                fg: c(0x7e, 0x22, 0xce),
+                border: c(0xe9, 0xd5, 0xff),
+            },
+            TintColor::Orange => Tint {
+                bg: c(0xff, 0xf7, 0xed),
+                fg: c(0xc2, 0x41, 0x0c),
+                border: c(0xfe, 0xd7, 0xaa),
+            },
+            TintColor::Cyan => Tint {
+                bg: c(0xec, 0xfe, 0xff),
+                fg: c(0x0e, 0x74, 0x90),
+                border: c(0xa5, 0xf3, 0xfc),
+            },
+            TintColor::Slate => Tint {
+                bg: c(0xf1, 0xf5, 0xf9),
+                fg: c(0x33, 0x41, 0x55),
+                border: c(0xe2, 0xe8, 0xf0),
+            },
+            TintColor::Indigo => Tint {
+                bg: c(0xee, 0xf2, 0xff),
+                fg: c(0x43, 0x38, 0xca),
+                border: c(0xc7, 0xd2, 0xfe),
+            },
+            TintColor::Amber => Tint {
+                bg: c(0xff, 0xfb, 0xeb),
+                fg: c(0x78, 0x35, 0x0e),
+                border: c(0xfc, 0xd3, 0x4d),
+            },
+        }
+    }
 }
 
-pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
-    let resolved = match mode {
-        ThemeMode::Light => egui::Theme::Light,
-        ThemeMode::Dark => egui::Theme::Dark,
-        ThemeMode::System => ctx.system_theme().unwrap_or(egui::Theme::Light),
-    };
-    let v = match resolved {
-        egui::Theme::Light => light_visuals(),
-        egui::Theme::Dark => dark_visuals(),
-    };
-    ctx.set_visuals(v);
+/// Install the theme into the app context. Call once after `gpui_kit::init`.
+pub fn init(cx: &mut App) {
+    cx.set_global(BlueprintTheme::light());
+}
 
-    // NOTE: mutate in place — never replace the whole Style, or the
-    // light Visuals set above get clobbered by Style::default()'s dark ones.
-    ctx.all_styles_mut(|s| {
-        s.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(2);
-        s.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(2);
-        s.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(2);
-        s.visuals.widgets.active.corner_radius = egui::CornerRadius::same(2);
-        s.spacing.item_spacing = egui::vec2(4.0, 4.0);
-        s.spacing.button_padding = egui::vec2(6.0, 2.0);
-    });
+/// Read the active theme from context.
+pub fn theme(cx: &App) -> BlueprintTheme {
+    *cx.global::<BlueprintTheme>()
 }

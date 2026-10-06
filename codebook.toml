@@ -1,8 +1,10 @@
 words = [
     "Cli",
+    "Varta",
     "cipherbytes",
     "ciphertext",
     "decapsulate",
+    "eocd",
     "fixint",
     "kdf",
     "kem",
@@ -11,5 +13,4 @@ words = [
     "nidhi",
     "passphase",
     "sagex",
-    "eocd"
 ]

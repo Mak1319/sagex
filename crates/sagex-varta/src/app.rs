@@ -1,39 +1,51 @@
-//! App composition: rail + left + right + center (+ bottom status).
-use eframe::egui;
-use crate::{components::composer::Composer, fonts, panels, svg_loader, theme::ThemeMode};
+use crate::components::title_bar::SysTitleBar;
+use crate::components::{canvas::Canvas, icon_rail::IconRail, side_panel::SidePanel};
+use crate::theme;
+use gpui_kit::base::resizable_panel;
+use gpui_kit::component::h_resizable;
+use gpui_kit::*;
 
-pub struct VartaApp {
-    left: panels::left::LeftState,
-    right: panels::right::RightState,
-    center: panels::center::CenterState,
-    theme: ThemeMode,
-    fonts_done: bool,
+pub struct App {
+    rail: Entity<IconRail>,
+    side: Entity<SidePanel>,
+    canvas: Entity<Canvas>,
 }
 
-impl VartaApp {
-    pub fn new() -> Self {
+impl App {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
-            left: panels::left::LeftState::new(),
-            right: panels::right::RightState::new(),
-            center: panels::center::CenterState { composer: Composer::new() },
-            theme: ThemeMode::default(),
-            fonts_done: false,
+            rail: cx.new(|_| IconRail::new()),
+            side: cx.new(|cx| SidePanel::new(window, cx)),
+            canvas: cx.new(|cx| Canvas::new(window, cx)),
         }
     }
 }
 
-impl eframe::App for VartaApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        crate::theme::apply(ui.ctx(), self.theme);
-        if !self.fonts_done {
-            fonts::install(ui.ctx());
-            svg_loader::SvgLoader::install(ui.ctx());
-            self.fonts_done = true;
-        }
-        panels::rail::show(ui, &mut self.left.mode, &mut self.theme);
-        panels::chrome::bottom(ui);
-        panels::left::show(ui, &mut self.left);
-        panels::right::show(ui, &mut self.right);
-        panels::center::show(ui, &mut self.center);
+impl Render for App {
+    fn render(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme::theme(cx);
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(t.canvas)
+            .text_color(t.on_surface)
+            .child(SysTitleBar::new("Varta"))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_1()
+                    .w_full()
+                    .size_full()
+                    .child(self.rail.clone())
+                    .child(
+                        div().size_full().child(
+                            h_resizable("my-layout")
+                                .child(resizable_panel().child(self.side.clone()))
+                                .child(resizable_panel().child(self.canvas.clone())),
+                        ),
+                    ),
+            )
     }
 }

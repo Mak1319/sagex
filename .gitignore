@@ -37,3 +37,5 @@ layout
 crates/sagex-archive/src2
 # Scr*
 stitch_*
+*.docx
+.codex

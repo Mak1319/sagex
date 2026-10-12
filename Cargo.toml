@@ -9,7 +9,6 @@ members = [
     "crates/sagex-csrfmt",
     "crates/sagex-keys",
     "crates/sagex-test",
-    "crates/sagex-varta",
     "crates/sagex-l1wm",
     "crates/sagex-nodeblock",
 ]

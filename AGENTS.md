@@ -1,24 +1,21 @@
-# AGENTS — Rebuild in `crates2/`, DO NOT USE `crates/`
+# AGENTS — Build in `crates/`, DO NOT USE `crates2/`
 
 > **Hard rules for all agents (human or AI). Read `problem.txt` first — it is the spec.**
 
-<!--
-## 1. FORBIDDEN: root `crates/` (frozen legacy)
+## 1. FORBIDDEN: top-level `crates2/` (do not inspect)
 
-- DO NOT read, list, `glob`, `grep`, `cat`, or open any file under `crates/`.
-- DO NOT import, depend on, link, or reference `crates/*` from any new code.
-- DO NOT create, edit, or move files under `crates/`.
-- DO NOT use the commented-out `crates/*` entries in root `Cargo.toml`, stale `Cargo.lock` history, or old `target/` artifacts as reference — they describe the removed legacy build.
-- DO NOT copy-paste code, configs, or node `.toml` files from `crates/`.
-- If a tool auto-suggests or auto-reads `crates/`, STOP, ignore it, continue without it.
-- When in doubt: pretend `crates/` does not exist.-->
+- DO NOT read, list, `glob`, `grep`, `cat`, or open any file under `crates2/`.
+- DO NOT import, depend on, link, or reference `crates2/*` from any new code.
+- DO NOT create, edit, or move files under `crates2/`.
+- If a tool auto-suggests or auto-reads `crates2/`, STOP, ignore it, continue without it.
+- When in doubt: pretend `crates2/` does not exist.
 
-## 2. DO: build variation in `crates2/`
+## 2. DO: build in `crates/`
 
-- Build the new approach **from scratch** in top-level `crates2/` only. Example: `crates2/<new-crate>/src/...`.
-- Do NOT create `packages/`, `apps/`, `v2/` — the target dir is `crates2/`.
-- Root `Cargo.toml [workspace] members` lists `crates2/*` only. Do NOT re-add `crates/*`. There is no nested `crates2/Cargo.toml` workspace — keep it that way.
-- Keep each `crates2/*` crate small, single-purpose, offline-only, no cloud KMS, no public chain.
+- Build the new approach in top-level `crates/` only. Example: `crates/<crate>/src/...`.
+- Do NOT create `packages/`, `apps/`, `v2/` — the target dir is `crates/`.
+- Root `Cargo.toml [workspace] members` lists `crates/*` only. Do NOT add `crates2/*`.
+- Keep each `crates/*` crate small, single-purpose, offline-only, no cloud KMS, no public chain.
 
 ## 3. MUST follow `@problem.txt` (binding spec)
 
@@ -29,7 +26,7 @@
 
 ## 4. Low-memory debug (mandatory)
 
-Agents + humans debugging `crates2/` MUST minimize RAM:
+Agents + humans debugging `crates/` MUST minimize RAM:
 
 - NEVER run full-workspace `cargo build / test / clippy`. Scope everything: `cargo check -p <crate>`, `cargo test -p <crate> --lib`, one crate at a time.
 - Prefer `cargo check` over `cargo build`; prefer `--message-format=short`, run single test: `cargo test -p <crate> <single_test> -- --exact --nocapture`.
@@ -40,7 +37,7 @@ Agents + humans debugging `crates2/` MUST minimize RAM:
 
 ## 5. Tests live in `tests/` — never inline, never ad-hoc files
 
-- NEVER put `#[cfg(test)] mod tests` inside `crates2/*/src/*.rs`. All tests go in the crate's `tests/` dir as integration tests (e.g. `crates2/<crate>/tests/<topic>.rs`) using the public API.
+- NEVER put `#[cfg(test)] mod tests` inside `crates/*/src/*.rs`. All tests go in the crate's `tests/` dir as integration tests (e.g. `crates/<crate>/tests/<topic>.rs`) using the public API.
 - NEVER create throwaway test/scratch files at repo root or in `src/` (no `test_*.rs`, `scratch.rs`, `tmp_*`, root-level `*.rs` experiments). If you need a repro, add it as a proper `tests/<name>.rs` file or delete it before finishing.
 - One topic per test file (`aes_postcard.rs`, `kem.rs`, `dsa.rs`, …). Run one file/test at a time: `cargo test -p <crate> --test <file> <name> -- --exact --nocapture`.
 
@@ -67,12 +64,4 @@ Agents + humans debugging `crates2/` MUST minimize RAM:
 - **Rule 3 — deterministic + stable**: generate from a fixed seed recorded in `environments/<service>/example-test-set/MANIFEST` (seed + generator version + item list) so runs are reproducible. NEVER regenerate or wipe an existing test-set on boot/service start — it persists like all env data (§7 Rule 2). Regen/delete ONLY when the user explicitly says so.
 - **Rule 4 — service-shaped**: the test-set MUST mirror exactly what the linked service consumes/produces (same file names, formats, TOML keys the service reads). If the service's format changes, its linked `example-test-set` generator changes with it — never drift.
 
-## 9. FORBIDDEN: `crates2/` (do not inspect)
-
-- DO NOT read, list, `glob`, `grep`, `cat`, or open any file under `crates2/`.
-- DO NOT import, depend on, link, or reference `crates2/*` from any new code.
-- DO NOT create, edit, or move files under `crates2/`.
-- If a tool auto-suggests or auto-reads `crates2/`, STOP, ignore it, continue without it.
-- When in doubt: pretend `crates2/` does not exist.
-
-Violation of §1 or ignoring `problem.txt` defeats the variation task.
+Violation of §1 or ignoring `problem.txt` defeats the task.

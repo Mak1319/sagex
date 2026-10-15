@@ -1,0 +1,419 @@
+[
+  {
+    "side": "recipient",
+    "name": "Priya Sharma",
+    "initial": "P",
+    "avatar_bg": "#FEE2E2",
+    "avatar_fg": "#B91C1C",
+    "avatar_border": "#FECACA",
+    "time": "14:12:08 UTC",
+    "badge": { "text": "CORE-ALGO", "fg": "#047857", "bg": "#ECFDF5", "border": "#6EE7B7" },
+    "body": "I've been testing the blending approach for the background layer. The results look much cleaner now with the normalized multipliers.",
+    "attachment": {
+      "kind": "pdf",
+      "filename": "schematic_spec_v2.4.pdf",
+      "meta": [
+        { "text": "14.8 MB" },
+        { "text": "32 Sheets" },
+        { "text": "CRC Verified", "color": "#047857", "bold": true }
+      ],
+      "primary": { "label": "Preview", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "sender",
+    "name": "You",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:18:19 UTC",
+    "badge": { "text": "AUTHOR", "fg": "#B45309", "bg": "#FFFBEB", "border": "#FDE68A" },
+    "body": "Here is the updated fragment shader stage. Handled the luminance conversion automatically inside the kernel:"
+  },
+  {
+    "side": "recipient",
+    "name": "Yuki Tanaka",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:19:02 UTC",
+    "body": "Kernel looks good on my end. Did you clamp before or after the colorspace hop?"
+  },
+  {
+    "side": "recipient",
+    "name": "Mira Shah",
+    "initial": "M",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:21:44 UTC",
+    "badge": { "text": "RENDER", "fg": "#0369A1", "bg": "#F0F9FF", "border": "#BAE6FD" },
+    "body": "Fresh viewport grab from the new pipeline for comparison:",
+    "attachment": {
+      "kind": "image",
+      "filename": "render_viewport_v2.png",
+      "thumb_tag": "PNG",
+      "meta": [
+        { "text": "1024x683 px" },
+        { "text": "1.2 MB" },
+        { "text": "RGBA 8bpc", "color": "#475569" }
+      ],
+      "primary": { "label": "Inspect", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Kai Rao",
+    "initial": "K",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:24:10 UTC",
+    "body": "Simulation run finished overnight, scrub to the middle where the blend kicks in:",
+    "attachment": {
+      "kind": "video",
+      "filename": "simulation_run.mp4",
+      "meta": [
+        { "text": "00:48" },
+        { "text": "1080p60" },
+        { "text": "42 MB" }
+      ],
+      "primary": { "label": "Play", "icon": "icons/play.svg" },
+      "icon_action": "icons/download.svg",
+      "footer": { "scrubber": { "progress": 0.33, "elapsed": "00:16", "total": "00:48" } }
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Ava Stone",
+    "initial": "A",
+    "avatar_bg": "#D1FAE5",
+    "avatar_fg": "#047857",
+    "avatar_border": "#A7F3D0",
+    "time": "14:27:33 UTC",
+    "badge": { "text": "FIELD", "fg": "#047857", "bg": "#ECFDF5", "border": "#A7F3D0" },
+    "body": "Telemetry capture from the rig, the hum spike is audible halfway through:",
+    "attachment": {
+      "kind": "audio",
+      "filename": "acoustic_telemetry.wav",
+      "meta": [
+        { "text": "24-bit PCM" },
+        { "text": "4.1 MB" },
+        { "text": "Stereo" }
+      ],
+      "primary": { "label": "Play", "icon": "icons/play.svg" },
+      "icon_action": "icons/download.svg",
+      "footer": {
+        "waveform": {
+          "bars": [0.5, 0.75, 1.0, 0.5, 0.88, 0.62, 1.0, 0.38, 0.75, 0.5, 0.88, 0.38, 0.62, 1.0, 0.5, 0.25, 0.75, 0.38],
+          "played": 0.4,
+          "elapsed": "00:19",
+          "total": "00:48"
+        }
+      }
+    }
+  },
+  {
+    "side": "sender",
+    "name": "You",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:31:05 UTC",
+    "badge": { "text": "AUTHOR", "fg": "#B45309", "bg": "#FFFBEB", "border": "#FDE68A" },
+    "body": "Stress matrix is attached, 42k rows across 6 tabs. The hotspot tab is the one to watch:",
+    "attachment": {
+      "kind": "sheet",
+      "filename": "thermal_stress_matrix.xlsx",
+      "meta": [
+        { "text": "42,800 ROWS" },
+        { "text": "6 TABS" },
+        { "text": "ECMA-376", "color": "#475569" },
+        { "text": "3.8 MB", "color": "#047857", "bold": true }
+      ],
+      "primary": { "label": "Preview Table", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Priya Sharma",
+    "initial": "P",
+    "avatar_bg": "#FEE2E2",
+    "avatar_fg": "#B91C1C",
+    "avatar_border": "#FECACA",
+    "time": "14:33:52 UTC",
+    "badge": { "text": "CORE-ALGO", "fg": "#047857", "bg": "#ECFDF5", "border": "#6EE7B7" },
+    "body": "Deck for Thursday's review is ready, 24 slides, all diagrams re-exported:",
+    "attachment": {
+      "kind": "slides",
+      "filename": "architecture_review_deck.pptx",
+      "meta": [
+        { "text": "24 SLIDES" },
+        { "text": "16:9" },
+        { "text": "ECMA-376", "color": "#475569" },
+        { "text": "8.4 MB", "color": "#B45309", "bold": true }
+      ],
+      "primary": { "label": "Preview Slides", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Yuki Tanaka",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:36:20 UTC",
+    "body": "Requirements doc updated to rev 1.4, four sections touched:",
+    "attachment": {
+      "kind": "doc",
+      "filename": "subsystem_spec_requirements.docx",
+      "meta": [
+        { "text": "18 PAGES" },
+        { "text": "4 SECTIONS" },
+        { "text": "REV 1.4", "color": "#475569" },
+        { "text": "2.1 MB", "color": "#1D4ED8", "bold": true }
+      ],
+      "primary": { "label": "Preview Doc", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Mira Shah",
+    "initial": "M",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:38:01 UTC",
+    "body": "Noted on the clamp order. I'll re-run the viewport batch with the fix and post the diffs here."
+  },
+  {
+    "side": "recipient",
+    "name": "Kai Rao",
+    "initial": "K",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:39:47 UTC",
+    "body": "Plus one: the relay diff for the migration is in the thread below, signature verified."
+  },
+  {
+    "side": "recipient",
+    "name": "Ava Stone",
+    "initial": "A",
+    "avatar_bg": "#D1FAE5",
+    "avatar_fg": "#047857",
+    "avatar_border": "#A7F3D0",
+    "time": "14:41:15 UTC",
+    "body": "Launch assets are packed, checksums inside:",
+    "attachment": {
+      "kind": "pdf",
+      "filename": "relay_migration_notes.pdf",
+      "meta": [
+        { "text": "2.4 MB" },
+        { "text": "9 Sheets" }
+      ],
+      "primary": { "label": "Preview", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "sender",
+    "name": "You",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:44:29 UTC",
+    "body": "Good. Full write-up of the clamp rationale, since three people asked: clamping after the hop keeps single-channel grayscale tensors from clipping at the low end, which is what was washing out the darks. Before the hop it also interacts badly with the normalized multipliers, pushing mid-tones up by almost a tenth. The kernel now does hop, clamp, blend, in that order, and the schematic Priya posted matches this sequence exactly."
+  },
+  {
+    "side": "recipient",
+    "name": "Arjun Mehta",
+    "initial": "A",
+    "avatar_bg": "#FAF5FF",
+    "avatar_fg": "#7E22CE",
+    "avatar_border": "#E9D5FF",
+    "time": "14:47:03 UTC",
+    "badge": { "text": "SIM-TEAM", "fg": "#7E22CE", "bg": "#FAF5FF", "border": "#E9D5FF" },
+    "body": "Second angle from the same run, this one caught the specular pass:",
+    "attachment": {
+      "kind": "image",
+      "filename": "render_viewport_specular_pass.png",
+      "thumb_tag": "PNG",
+      "meta": [
+        { "text": "2048x1365 px" },
+        { "text": "3.6 MB" }
+      ],
+      "primary": { "label": "Inspect", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Sara Kim",
+    "initial": "S",
+    "avatar_bg": "#FFF7ED",
+    "avatar_fg": "#C2410C",
+    "avatar_border": "#FED7AA",
+    "time": "14:49:36 UTC",
+    "body": "Tokens are updated on my side, I'll push the new scale ramp once the review deck lands."
+  },
+  {
+    "side": "sender",
+    "name": "You",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "14:52:11 UTC",
+    "badge": { "text": "AUTHOR", "fg": "#B45309", "bg": "#FFFBEB", "border": "#FDE68A" },
+    "body": "Second half of the sim, the tail where the buffer settles:",
+    "attachment": {
+      "kind": "video",
+      "filename": "simulation_tail_settle.mp4",
+      "meta": [
+        { "text": "01:12" },
+        { "text": "1080p60" },
+        { "text": "61 MB" }
+      ],
+      "primary": { "label": "Play", "icon": "icons/play.svg" },
+      "icon_action": "icons/download.svg",
+      "footer": { "scrubber": { "progress": 0.75, "elapsed": "00:54", "total": "01:12" } }
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Mira Shah",
+    "initial": "M",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:55:28 UTC",
+    "body": "Clean room tone for the NR profile, stereo pair from last night:",
+    "attachment": {
+      "kind": "audio",
+      "filename": "room_tone_stereo_pair.wav",
+      "meta": [
+        { "text": "24-bit PCM" },
+        { "text": "9.7 MB" },
+        { "text": "Stereo" }
+      ],
+      "primary": { "label": "Play", "icon": "icons/play.svg" },
+      "icon_action": "icons/download.svg",
+      "footer": {
+        "waveform": {
+          "bars": [0.25, 0.31, 0.28, 0.35, 0.3, 0.42, 0.38, 0.33, 0.29, 0.36, 0.31, 0.27, 0.34, 0.3, 0.26, 0.32, 0.28, 0.24, 0.3, 0.26],
+          "played": 0.15,
+          "elapsed": "00:07",
+          "total": "00:48"
+        }
+      }
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Kai Rao",
+    "initial": "K",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "14:58:02 UTC",
+    "body": "Migration is green on staging, hotfix branch is cut."
+  },
+  {
+    "side": "recipient",
+    "name": "Ava Stone",
+    "initial": "A",
+    "avatar_bg": "#D1FAE5",
+    "avatar_fg": "#047857",
+    "avatar_border": "#A7F3D0",
+    "time": "15:01:19 UTC",
+    "body": "Test plan is linked in the doc comments, section three covers the blend cases:"
+  },
+  {
+    "side": "recipient",
+    "name": "Yuki Tanaka",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "15:03:44 UTC",
+    "body": "Confirming the hop-clamp-blend order fixes the grayscale washout on the test corpus too."
+  },
+  {
+    "side": "recipient",
+    "name": "Priya Sharma",
+    "initial": "P",
+    "avatar_bg": "#FEE2E2",
+    "avatar_fg": "#B91C1C",
+    "avatar_border": "#FECACA",
+    "time": "15:06:57 UTC",
+    "badge": { "text": "CORE-ALGO", "fg": "#047857", "bg": "#ECFDF5", "border": "#6EE7B7" },
+    "body": "Full per-build breakdown with the absurdly long export name so we can watch the title row ellipsize:",
+    "attachment": {
+      "kind": "sheet",
+      "filename": "blend_pipeline_per_build_breakdown_all_configurations_export_v7_FINAL_REVIEWED.xlsx",
+      "meta": [
+        { "text": "120,400 ROWS" },
+        { "text": "11 TABS" },
+        { "text": "9.1 MB", "color": "#047857", "bold": true }
+      ],
+      "primary": { "label": "Preview Table", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "sender",
+    "name": "You",
+    "initial": "Y",
+    "avatar_bg": "#DBEAFE",
+    "avatar_fg": "#004AC6",
+    "avatar_border": "#BFDBFE",
+    "time": "15:09:23 UTC",
+    "body": "LGTM. Shipping it."
+  },
+  {
+    "side": "recipient",
+    "name": "Lena Park",
+    "initial": "L",
+    "avatar_bg": "#ECFDF5",
+    "avatar_fg": "#047857",
+    "avatar_border": "#A7F3D0",
+    "time": "15:11:48 UTC",
+    "badge": { "text": "DESIGN", "fg": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE" },
+    "body": "Storyboard pass for the launch sequence, feedback welcome before Friday:",
+    "attachment": {
+      "kind": "slides",
+      "filename": "launch_storyboard_pass.pptx",
+      "meta": [
+        { "text": "12 SLIDES" },
+        { "text": "16:9" },
+        { "text": "5.2 MB", "color": "#B45309", "bold": true }
+      ],
+      "primary": { "label": "Preview Slides", "icon": "icons/eye.svg" },
+      "icon_action": "icons/download.svg"
+    }
+  },
+  {
+    "side": "recipient",
+    "name": "Ava Stone",
+    "initial": "A",
+    "avatar_bg": "#D1FAE5",
+    "avatar_fg": "#047857",
+    "avatar_border": "#A7F3D0",
+    "time": "15:14:02 UTC",
+    "body": "Weekly digest is out, relay node restarted cleanly after the migration."
+  },
+  {
+    "side": "recipient",
+    "name": "Mira Shah",
+    "initial": "M",
+    "avatar_bg": "#F1F5F9",
+    "avatar_fg": "#64748B",
+    "time": "15:16:37 UTC",
+    "body": "Wrapping the mockups tonight, will pin them in the morning thread."
+  }
+]

@@ -17,6 +17,8 @@ use crate::layout::chat_top_bar::ChatTopBar;
 use crate::seed::{SeedCard, SeedMessage, SeedSide, load_messages};
 use crate::theme;
 
+type NewGroupHandler = std::rc::Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
 pub struct ChatCanvas {
     composer: Entity<TextareaState>,
     filter: Entity<InputState>,
@@ -27,6 +29,7 @@ pub struct ChatCanvas {
     deck_collapsed: bool,
     access_collapsed: bool,
     checked: [bool; RECIPIENT_COUNT],
+    on_new_group: Option<NewGroupHandler>,
 }
 
 /// Temporary debug default: deck visible on boot. Flip to false to restore.
@@ -53,7 +56,16 @@ impl ChatCanvas {
             deck_collapsed: false,
             access_collapsed: false,
             checked: [true, true, true, false, false],
+            on_new_group: None,
         }
+    }
+
+    pub fn on_new_group(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_new_group = Some(std::rc::Rc::new(handler));
+        self
     }
 
     fn set_license(&mut self, show: bool, cx: &mut Context<Self>) {

@@ -17,6 +17,7 @@ const KEBAB: &str = "icons/ellipsis-vertical.svg";
 pub struct ChatTopBar {
     title: SharedString,
     subtitle: SharedString,
+    on_new_group: Option<NewGroupHandler>,
 }
 
 impl ChatTopBar {
@@ -27,9 +28,20 @@ impl ChatTopBar {
         Self {
             title: title.into(),
             subtitle: subtitle.into(),
+            on_new_group: None,
         }
     }
+
+    pub fn on_new_group(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_new_group = Some(std::rc::Rc::new(handler));
+        self
+    }
 }
+
+type NewGroupHandler = std::rc::Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 impl RenderOnce for ChatTopBar {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
@@ -103,7 +115,14 @@ impl RenderOnce for ChatTopBar {
                     ),
             )
             .child(BarButton::new("chat-call", VIDEO))
-            .child(BarButton::new("chat-members", MEMBERS))
+            .child({
+                let mut members = BarButton::new("chat-members", MEMBERS);
+                if let Some(handler) = self.on_new_group {
+                    members = members
+                        .on_click(move |event, window, cx| handler(event, window, cx));
+                }
+                members
+            })
             .child(BarButton::new("chat-search", SEARCH))
             .child(div().w(px(1.0)).h(px(16.0)).bg(theme::rgb(theme::colors::GRID_L1)))
             .child(BarButton::new("chat-more", KEBAB))

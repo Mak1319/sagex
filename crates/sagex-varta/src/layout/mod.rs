@@ -5,6 +5,7 @@ pub mod chat_canvas;
 pub mod chat_top_bar;
 pub mod chat_window;
 pub mod conversation_list;
+pub mod group_form;
 pub mod icon_rail;
 pub mod inspector;
 pub mod top_bar;

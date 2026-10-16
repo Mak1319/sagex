@@ -1,5 +1,7 @@
 //! Inspector sheet content — manual `gpui-base` expansion only.
 
+use gpui_kit::base::Button as BaseButton;
+use gpui_kit::component::WindowExt;
 use gpui_kit::*;
 
 use crate::theme;
@@ -31,9 +33,36 @@ impl RenderOnce for InspectorContent {
             .bg(theme::rgb(theme::colors::SURFACE_LOWEST))
             .child(
                 div()
-                    .text_size(px(11.0))
-                    .text_color(theme::rgb(theme::colors::MUTED))
-                    .child("ITEM INSPECTOR"),
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .w_full()
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(theme::rgb(theme::colors::MUTED))
+                            .child("ITEM INSPECTOR"),
+                    )
+                    .child(
+                        BaseButton::new(ElementId::Name("inspector-close".into()))
+                            .w(px(22.0))
+                            .h(px(22.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(2.0))
+                            .text_color(theme::rgb(theme::colors::MUTED))
+                            .hover(|s| s.bg(theme::rgb(theme::colors::ROW_HOVER)))
+                            .on_click(|_, window, cx| window.close_sheet(cx))
+                            .child(
+                                svg()
+                                    .path("icons/x-mark.svg")
+                                    .w(px(12.0))
+                                    .h(px(12.0))
+                                    .text_color(theme::rgb(theme::colors::MUTED)),
+                            ),
+                    ),
             )
             .child(
                 div()

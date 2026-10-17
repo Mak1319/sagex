@@ -20,6 +20,7 @@ const CHAT: &str = "icons/chat-bubble-left.svg";
 
 /// Index: 0 = dark (moon), 1 = light (sun), 2 = chat.
 #[derive(IntoElement)]
+//(!) ModeSlider
 pub struct ThreeStateSlider {
     active: u8,
     on_change: Option<ChangeHandler>,

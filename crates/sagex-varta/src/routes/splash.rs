@@ -99,7 +99,7 @@ impl SplashPage {
             window_min_size: Some(size(px(SPLASH_WINDOW_SIZE[0]), px(SPLASH_WINDOW_SIZE[1]))),
             ..Default::default()
         };
-        gpui_kit::open_window(opts, cx, |window, cx| {
+        gpui_kit::open_window(crate::assets::with_app_id(opts), cx, |window, cx| {
             cx.new(|cx| SplashPage::new(window, cx))
         })
         .is_ok()

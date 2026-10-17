@@ -66,7 +66,7 @@ fn main() {
                     }),
                     ..Default::default()
                 };
-                gpui_kit::open_window(license_opts, cx, |window, cx| {
+                gpui_kit::open_window(crate::assets::with_app_id(license_opts), cx, |window, cx| {
                     cx.new(|cx| routes::licenses::LicensePage::new(window, cx))
                 })
                 .expect("failed to open LicenseWindow");
@@ -88,7 +88,7 @@ fn main() {
                     }),
                     ..Default::default()
                 };
-                gpui_kit::open_window(profile_opts, cx, |window, cx| {
+                gpui_kit::open_window(crate::assets::with_app_id(profile_opts), cx, |window, cx| {
                     cx.new(|cx| routes::profile::ProfilePage::new(window, cx))
                 })
                 .expect("failed to open ProfileWindow");
@@ -125,7 +125,7 @@ fn main() {
                     )),
                     ..Default::default()
                 };
-                gpui_kit::open_window(signup_opts, cx, |window, cx| {
+                gpui_kit::open_window(crate::assets::with_app_id(signup_opts), cx, |window, cx| {
                     cx.new(|cx| routes::signup::SignupPage::new(window, cx))
                 })
                 .expect("failed to open SignupWindow");
@@ -152,7 +152,7 @@ fn main() {
                     )),
                     ..Default::default()
                 };
-                gpui_kit::open_window(login_opts, cx, |window, cx| {
+                gpui_kit::open_window(crate::assets::with_app_id(login_opts), cx, |window, cx| {
                     cx.new(|cx| routes::login::LoginPage::new(window, cx))
                 })
                 .expect("failed to open LoginWindow");
@@ -170,7 +170,7 @@ fn main() {
             //     }),
             //     ..Default::default()
             // };
-            // gpui_kit::open_window(opts, cx, |window, cx| {
+            // gpui_kit::open_window(crate::assets::with_app_id(opts), cx, |window, cx| {
             //     cx.new(|cx| app::AppView::new(window, cx))
             // })
             // .expect("failed to open window");
@@ -186,7 +186,7 @@ fn main() {
                 }),
                 ..Default::default()
             };
-            gpui_kit::open_window(chat_opts, cx, |window, cx| {
+            gpui_kit::open_window(crate::assets::with_app_id(chat_opts), cx, |window, cx| {
                 cx.new(|cx| layout::chat_window::ChatWindow::new(window, cx))
             })
             .expect("failed to open ChatWindow");

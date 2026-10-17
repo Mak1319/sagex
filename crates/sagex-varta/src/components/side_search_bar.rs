@@ -12,6 +12,7 @@ use crate::theme;
 const SEARCH: &str = "icons/magnifying-glass.svg";
 
 #[derive(IntoElement)]
+//(!) Input Fields
 pub struct SideSearchBar {
     search: Entity<InputState>,
     shortcut: SharedString,

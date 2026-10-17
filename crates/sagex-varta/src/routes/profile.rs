@@ -189,7 +189,7 @@ impl ProfilePage {
             }),
             ..Default::default()
         };
-        gpui_kit::open_window(opts, cx, |window, cx| {
+        gpui_kit::open_window(crate::assets::with_app_id(opts), cx, |window, cx| {
             cx.new(|cx| ProfilePage::new(window, cx))
         })
         .is_ok()

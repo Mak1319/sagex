@@ -15,6 +15,7 @@ use crate::theme;
 const COUNT: usize = 24;
 const SEED: u32 = 0xC0FFEE;
 
+//(!) ConversationListMilestore (pinned messages)
 struct Row {
     id: SharedString,
     initial: SharedString,

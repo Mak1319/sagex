@@ -9,6 +9,7 @@ use crate::theme;
 #[derive(IntoElement)]
 pub struct TopBar {
     title: SharedString,
+    on_back: Option<BackHandler>,
     on_inspector: Option<InspectorHandler>,
 }
 
@@ -16,8 +17,17 @@ impl TopBar {
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
             title: title.into(),
+            on_back: None,
             on_inspector: None,
         }
+    }
+
+    pub fn on_back(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_back = Some(std::rc::Rc::new(handler));
+        self
     }
 
     pub fn on_inspector(
@@ -30,6 +40,8 @@ impl TopBar {
 }
 
 type InspectorHandler = std::rc::Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+type BackHandler = std::rc::Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 impl RenderOnce for TopBar {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
@@ -65,21 +77,61 @@ impl RenderOnce for TopBar {
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
+                    .child({
+                        let mut left = div()
                             .flex()
                             .flex_row()
-                            .gap_1()
-                            .child(div().w(px(10.)).h(px(10.)).rounded_full().bg(theme::rgb(
-                                0xfb7185,
-                            )))
-                            .child(div().w(px(10.)).h(px(10.)).rounded_full().bg(theme::rgb(
-                                0xfbbf24,
-                            )))
-                            .child(div().w(px(10.)).h(px(10.)).rounded_full().bg(theme::rgb(
-                                0x34d399,
-                            ))),
-                    )
+                            .items_center()
+                            .gap_2();
+                        if let Some(handler) = self.on_back {
+                            left = left.child(
+                                BaseButton::new(ElementId::Name("topbar-back".into()))
+                                    .w(px(28.0))
+                                    .h(px(28.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(theme::radius::DEFAULT))
+                                    .text_color(theme::rgb(theme::colors::MUTED))
+                                    .hover(|s| {
+                                        s.bg(theme::rgb(theme::colors::ROW_HOVER))
+                                    })
+                                    .on_click(move |event, window, cx| {
+                                        handler(event, window, cx)
+                                    })
+                                    .child(
+                                        svg()
+                                            .path("icons/arrow-left.svg")
+                                            .w(px(14.0))
+                                            .h(px(14.0))
+                                            .text_color(theme::rgb(
+                                                theme::colors::MUTED,
+                                            )),
+                                    ),
+                            );
+                        }
+                        left.child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_1()
+                                .child(
+                                    div().w(px(10.)).h(px(10.)).rounded_full().bg(
+                                        theme::rgb(0xfb7185),
+                                    ),
+                                )
+                                .child(
+                                    div().w(px(10.)).h(px(10.)).rounded_full().bg(
+                                        theme::rgb(0xfbbf24),
+                                    ),
+                                )
+                                .child(
+                                    div().w(px(10.)).h(px(10.)).rounded_full().bg(
+                                        theme::rgb(0x34d399),
+                                    ),
+                                ),
+                        )
+                    })
                     .child(
                         div()
                             .text_size(px(12.0))

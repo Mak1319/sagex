@@ -32,3 +32,15 @@ impl AssetSource for VartaAssets {
         Ok(out)
     }
 }
+
+/// Linux app identity: must match `StartupWMClass` in
+/// `dist/linux/sagex-varta.desktop` so Wayland/X11 compositors resolve
+/// the taskbar/dock icon to our hicolor `sagex-varta` icon instead of
+/// the generic Wayland/X11 fallback.
+pub const APP_ID: &str = "sagex-varta";
+
+/// Stamp [`APP_ID`] onto window options before [`gpui_kit::open_window`].
+pub fn with_app_id(mut opts: WindowOptions) -> WindowOptions {
+    opts.app_id = Some(APP_ID.into());
+    opts
+}

@@ -54,6 +54,7 @@ impl MetaSeg {
 }
 
 #[derive(IntoElement)]
+//(!) Message cards
 pub struct FileCard {
     id: Option<SharedString>,
     kind: FileKind,

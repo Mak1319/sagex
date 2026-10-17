@@ -13,6 +13,7 @@ use crate::theme;
 type SsoHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
+//(!) Button with Icon Label
 pub struct SsoButton {
     id: SharedString,
     icon: SharedString,

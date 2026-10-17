@@ -26,6 +26,7 @@ const MENTION: &str = "icons/at-symbol.svg";
 const SEND: &str = "icons/paper-airplane.svg";
 
 #[derive(IntoElement)]
+//(!) ChatComposer
 pub struct ChatComposer {
     state: Entity<TextareaState>,
     on_attach: Option<ComposerHandler>,

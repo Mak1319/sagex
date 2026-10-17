@@ -11,6 +11,7 @@ use gpui_kit::*;
 use crate::theme;
 
 #[derive(IntoElement)]
+//(!) Avatar
 pub struct Avatar {
     initial: SharedString,
     bg: u32,

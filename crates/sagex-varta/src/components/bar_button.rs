@@ -13,6 +13,7 @@ use crate::theme;
 type BarHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
+//(!) IconButton
 pub struct BarButton {
     id: SharedString,
     icon: SharedString,

@@ -3,8 +3,7 @@
 //! Reference layout: header with export actions, recognized-dependencies
 //! toolbar with live search, category tabs, package table with per-row
 //! license-term sheets, live footer counts, legal-notices card. Exports
-//! copy real generated content (notices text / SPDX JSON) to the
-//! clipboard; license blurbs are short factual SPDX summaries.
+//! copy the checked-in license inventory and notices to the clipboard.
 
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputState as KitInput};
@@ -19,125 +18,34 @@ pub const LICENSE_WINDOW_SIZE: [f32; 2] = [1100.0, 750.0];
 
 struct Package {
     name: &'static str,
-    version: &'static str,
-    license: &'static str,
-    org: &'static str,
+    version: Option<&'static str>,
+    license: Option<&'static str>,
+    author: Option<&'static str>,
     category: &'static str,
     icon: &'static str,
-    blurb: &'static str,
+    description: Option<&'static str>,
 }
 
-const PACKAGES: &[Package] = &[
-    Package {
-        name: "@khronos/webgl-pipeline",
-        version: "v2.4.0",
-        license: "MIT",
-        org: "Khronos Group Standards Team",
-        category: "graphics",
-        icon: "icons/squares-2x2.svg",
-        blurb: "Permissive license allowing reuse with attribution. Requires the copyright and permission notices in all copies.",
-    },
-    Package {
-        name: "wgpu-native-runtime",
-        version: "v0.19.1",
-        license: "Apache-2.0",
-        org: "Rust GPU Working Group",
-        category: "graphics",
-        icon: "icons/cog-6-tooth.svg",
-        blurb: "Permissive license with an express patent grant. Requires a license copy, state-changes notices, and NOTICE preservation.",
-    },
-    Package {
-        name: "libmesh-cad-parser",
-        version: "v1.14.8",
-        license: "BSD-3-Clause",
-        org: "Stanford Graphics Lab & Contributors",
-        category: "graphics",
-        icon: "icons/doc.svg",
-        blurb: "Permissive license requiring the copyright notice, conditions list, and no-endorsement clause in redistributions.",
-    },
-    Package {
-        name: "matrix-crypto-olm",
-        version: "v3.2.15",
-        license: "Apache-2.0",
-        org: "Matrix Foundation & Contributors",
-        category: "crypto",
-        icon: "icons/lock-closed.svg",
-        blurb: "Permissive license with an express patent grant. Requires a license copy, state-changes notices, and NOTICE preservation.",
-    },
-    Package {
-        name: "jetbrains-mono-nerd-font",
-        version: "v3.1.0",
-        license: "OFL-1.1",
-        org: "JetBrains s.r.o.",
-        category: "ui",
-        icon: "icons/code-bracket.svg",
-        blurb: "SIL Open Font License: fonts may be used, studied, modified, and redistributed. Modified versions must not use reserved names and stay under OFL.",
-    },
-    Package {
-        name: "tokio-schematic-runtime",
-        version: "v1.36.0",
-        license: "MIT",
-        org: "Tokio Project Contributors",
-        category: "networking",
-        icon: "icons/refresh.svg",
-        blurb: "Permissive license allowing reuse with attribution. Requires the copyright and permission notices in all copies.",
-    },
-    Package {
-        name: "tauri-client-runtime",
-        version: "v2.1.2",
-        license: "MIT",
-        org: "Tauri Programme Contributors",
-        category: "ui",
-        icon: "icons/photo.svg",
-        blurb: "Permissive license allowing reuse with attribution. Requires the copyright and permission notices in all copies.",
-    },
-    Package {
-        name: "protobuf-ts",
-        version: "v2.9.4",
-        license: "Apache-2.0",
-        org: "Timo Ernst & Contributors",
-        category: "networking",
-        icon: "icons/link.svg",
-        blurb: "Permissive license with an express patent grant. Requires a license copy, state-changes notices, and NOTICE preservation.",
-    },
-    Package {
-        name: "zstandard-codec",
-        version: "v1.5.5",
-        license: "BSD-3-Clause",
-        org: "Meta Platforms, Inc.",
-        category: "crypto",
-        icon: "icons/funnel.svg",
-        blurb: "Permissive license requiring the copyright notice, conditions list, and no-endorsement clause in redistributions.",
-    },
-    Package {
-        name: "ed25519-dalek-core",
-        version: "v2.1.1",
-        license: "ISC",
-        org: "Dalek Cryptography Team",
-        category: "crypto",
-        icon: "icons/key.svg",
-        blurb: "Permissive license functionally equivalent to MIT/BSD-2-Clause. Requires the copyright and permission notices in all copies.",
-    },
-];
+include!(concat!(env!("OUT_DIR"), "/licenses_data.rs"));
 
 const TABS: &[(&str, &str)] = &[
-    ("all", "All Packages"),
+    ("all", "All Items"),
     ("graphics", "Graphics & WebGL"),
     ("crypto", "Crypto & Security"),
     ("ui", "UI & Framework"),
     ("networking", "Networking & Core"),
 ];
 
-const REQUEST_TEMPLATE: &str = "Subject: Source Archive Request (SageX Varta)\nTo: legal compliance desk\n\nPlease provide the corresponding source archive for the open-source components listed in the bundled SPDX manifest (SPDX-SPEC 3.0).";
+const REQUEST_TEMPLATE: &str = "Subject: Source Archive Request (SageX Varta)\nTo: legal compliance desk\n\nPlease provide the corresponding source archive for the open-source components listed in the bundled license inventory.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CopyKind {
     Notices,
-    Manifest,
+    Inventory,
     Request,
 }
 
-/// License chip tint per SPDX id: bg + fg.
+/// License chip tint by common license identifier: background + foreground.
 fn license_tint(id: &str) -> (u32, u32) {
     match id {
         "MIT" => (0xdbeafe, theme::colors::PRIMARY_DARK),
@@ -149,35 +57,22 @@ fn license_tint(id: &str) -> (u32, u32) {
 }
 
 fn notices_txt(pkgs: &[&Package]) -> String {
-    let mut out = String::from("SageX Varta — Third-Party Notices (SPDX-SPEC 3.0)\n\n");
+    let mut out = String::from("SageX Varta — License Inventory Notices\n\n");
     for p in pkgs {
         out.push_str(&format!(
             "{} {} ({})\n{}\n{}\n\n",
-            p.name, p.version, p.license, p.org, p.blurb
+            p.name,
+            p.version.unwrap_or("Version not recorded"),
+            p.license.unwrap_or("License not recorded"),
+            p.author.unwrap_or("Author not recorded"),
+            p.description.unwrap_or("No description recorded.")
         ));
     }
     out
 }
 
 fn manifest_json() -> String {
-    let pkgs: Vec<serde_json::Value> = PACKAGES
-        .iter()
-        .map(|p| {
-            serde_json::json!({
-                "name": p.name,
-                "version": p.version,
-                "license": p.license,
-                "organization": p.org,
-                "category": p.category,
-            })
-        })
-        .collect();
-    serde_json::to_string_pretty(&serde_json::json!({
-        "spdx": "3.0",
-        "application": "SageX Varta",
-        "packages": pkgs,
-    }))
-    .unwrap_or_default()
+    INVENTORY_JSON.to_string()
 }
 
 #[derive(IntoElement)]
@@ -208,41 +103,58 @@ impl RenderOnce for LicenseSheet {
                     .flex_col()
                     .gap_1()
                     .w_full()
-                    .child(term_row("VERSION", p.version))
-                    .child(term_row("SPDX LICENSE", p.license))
-                    .child(term_row("ORGANIZATION", p.org)),
+                    .child(TermRow::new("VERSION", p.version.unwrap_or("Not recorded")))
+                    .child(TermRow::new("LICENSE", p.license.unwrap_or("Not recorded")))
+                    .child(TermRow::new("AUTHOR", p.author.unwrap_or("Not recorded"))),
             )
             .child(
                 div()
                     .text_size(px(12.0))
                     .text_color(theme::rgb(theme::colors::INK))
-                    .child(p.blurb),
+                    .child(p.description.unwrap_or("No description recorded.")),
             )
     }
 }
 
-fn term_row(label: &str, value: &str) -> AnyElement {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_between()
-        .w_full()
-        .child(
-            div()
-                .font_family(theme::fonts::MONO)
-                .text_size(px(10.0))
-                .text_color(theme::rgb(theme::colors::MUTED))
-                .child(label.to_string()),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(theme::rgb(theme::colors::INK))
-                .child(value.to_string()),
-        )
-        .into_any_element()
+/// Term row — RenderOnce so no free function builds component trees.
+#[derive(IntoElement)]
+struct TermRow {
+    label: SharedString,
+    value: SharedString,
+}
+
+impl TermRow {
+    fn new(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Self {
+        Self {
+            label: label.into(),
+            value: value.into(),
+        }
+    }
+}
+
+impl RenderOnce for TermRow {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .child(
+                div()
+                    .font_family(theme::fonts::MONO)
+                    .text_size(px(10.0))
+                    .text_color(theme::rgb(theme::colors::MUTED))
+                    .child(self.label),
+            )
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme::rgb(theme::colors::INK))
+                    .child(self.value),
+            )
+    }
 }
 
 fn open_terms(pkg: &'static Package, window: &mut Window, cx: &mut App) {
@@ -296,7 +208,7 @@ impl LicensePage {
             }),
             ..Default::default()
         };
-        gpui_kit::open_window(opts, cx, |window, cx| {
+        gpui_kit::open_window(crate::assets::with_app_id(opts), cx, |window, cx| {
             cx.new(|cx| LicensePage::new(window, cx))
         })
         .is_ok()
@@ -326,8 +238,8 @@ impl LicensePage {
                 (self.tab == "all" || p.category == self.tab)
                     && (query.is_empty()
                         || p.name.to_lowercase().contains(&query)
-                        || p.license.to_lowercase().contains(&query)
-                        || p.org.to_lowercase().contains(&query))
+                        || p.license.unwrap_or("").to_lowercase().contains(&query)
+                        || p.author.unwrap_or("").to_lowercase().contains(&query))
             })
             .collect()
     }
@@ -495,21 +407,21 @@ impl Render for LicensePage {
                             .font_family(theme::fonts::MONO)
                             .text_size(px(11.0))
                             .text_color(theme::rgb(theme::colors::MUTED))
-                            .child(pkg.version),
+                            .child(pkg.version.unwrap_or("—")),
                     )
                     .child(
                         div()
                             .col_span(2)
                             .flex()
                             .flex_row()
-                            .child(Self::license_chip(pkg.license)),
+                            .child(Self::license_chip(pkg.license.unwrap_or("Unknown"))),
                     )
                     .child(
                         div()
                             .col_span(3)
                             .text_size(px(12.0))
                             .text_color(theme::rgb(theme::colors::INK))
-                            .child(pkg.org),
+                            .child(pkg.author.unwrap_or("Not recorded")),
                     )
                     .child(
                         Self::terms_button(pkg),
@@ -606,7 +518,7 @@ impl Render for LicensePage {
                                                     .text_color(theme::rgb(
                                                         theme::colors::MUTED,
                                                     ))
-                                                    .child("SPDX-INDEX // 48 ASSETS"),
+                                                    .child(format!("LICENSE INVENTORY // {} ITEMS", PACKAGES.len())),
                                             ),
                                     )
                                     .child(
@@ -614,7 +526,7 @@ impl Render for LicensePage {
                                             .text_size(px(12.0))
                                             .text_color(theme::rgb(theme::colors::MUTED))
                                             .child(
-                                                "This application incorporates open-source libraries, runtimes, and components under their respective license conditions. All attributions and license texts are cataloged below.",
+                                                "This inventory records direct dependencies and bundled assets. Missing license or provenance details are marked as not recorded.",
                                             ),
                                     ),
                             )
@@ -636,12 +548,12 @@ impl Render for LicensePage {
                                     ))
                                     .child(Self::export_button(
                                         "license-export-json",
-                                        "SPDX Manifest (.json)",
+                                        "License Inventory (.json)",
                                         "Copied",
-                                        copied == Some(CopyKind::Manifest),
+                                        copied == Some(CopyKind::Inventory),
                                         true,
                                         &view,
-                                        CopyKind::Manifest,
+                                        CopyKind::Inventory,
                                         manifest_json(),
                                     )),
                             ),
@@ -690,7 +602,7 @@ impl Render for LicensePage {
                                                     .text_color(theme::rgb(
                                                         theme::colors::INK,
                                                     ))
-                                                    .child("RECOGNIZED SOFTWARE DEPENDENCIES"),
+                                            .child("INVENTORY ITEMS"),
                                             )
                                             .child(
                                                 div()
@@ -703,7 +615,7 @@ impl Render for LicensePage {
                                                     .text_color(theme::rgb(
                                                         theme::colors::SUCCESS,
                                                     ))
-                                                    .child("FOSS COMPLIANT"),
+                                                    .child("MANUALLY MAINTAINED"),
                                             ),
                                     )
                                     .child(
@@ -764,14 +676,14 @@ impl Render for LicensePage {
                                     .text_size(px(9.0))
                                     .text_color(theme::rgb(theme::colors::MUTED))
                                     .child(
-                                        div().col_span(4).child("SOFTWARE PACKAGE"),
+                                        div().col_span(4).child("INVENTORY ITEM"),
                                     )
                                     .child(div().col_span(1).child("VERSION"))
-                                    .child(div().col_span(2).child("SPDX LICENSE"))
+                                    .child(div().col_span(2).child("LICENSE"))
                                     .child(
                                         div()
                                             .col_span(3)
-                                            .child("COPYRIGHT / ORGANIZATION"),
+                                            .child("AUTHOR"),
                                     )
                                     .child(div().col_span(2).child("ACTION")),
                             )
@@ -791,7 +703,8 @@ impl Render for LicensePage {
                                             .text_size(px(9.0))
                                             .text_color(theme::rgb(theme::colors::MUTED))
                                             .child(SharedString::from(format!(
-                                                "Showing {shown} of 10 compiled packages"
+                                                "Showing {shown} of {} inventory items",
+                                                PACKAGES.len()
                                             ))),
                                     )
                                     .child(
@@ -806,7 +719,7 @@ impl Render for LicensePage {
                                                     .text_color(theme::rgb(
                                                         theme::colors::MUTED,
                                                     ))
-                                                    .child("SPDX-SPEC: 3.0"),
+                                                    .child("MANUAL INVENTORY"),
                                             )
                                             .child(
                                                 div()
@@ -814,7 +727,7 @@ impl Render for LicensePage {
                                                     .text_color(theme::rgb(
                                                         theme::colors::SUCCESS,
                                                     ))
-                                                    .child("ALL OBLIGATIONS MET"),
+                                                    .child("METADATA MAY BE INCOMPLETE"),
                                             ),
                                     ),
                             ),

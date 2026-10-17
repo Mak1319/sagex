@@ -25,6 +25,7 @@ const KEBAB: &str = "icons/ellipsis-vertical.svg";
 
 /// Single conversation row. Build with `new(id)` then the property builders.
 #[derive(IntoElement)]
+//(!) ConversationListItem
 pub struct ConversationListItem {
     id: SharedString,
     initial: SharedString,

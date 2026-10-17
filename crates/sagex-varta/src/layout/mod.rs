@@ -8,4 +8,5 @@ pub mod conversation_list;
 pub mod group_form;
 pub mod icon_rail;
 pub mod inspector;
+pub mod single_chat;
 pub mod top_bar;

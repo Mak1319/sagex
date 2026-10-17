@@ -23,6 +23,7 @@ pub enum BlueprintVariant {
 /// Blueprint-styled button. Construct with `BlueprintButton::new(id)`,
 /// then `.label(..)`, `.primary()` / `.ghost()`, `.on_click(..)`.
 #[derive(IntoElement)]
+//(!) Normal Fill button
 pub struct BlueprintButton {
     id: SharedString,
     label: SharedString,

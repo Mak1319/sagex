@@ -39,6 +39,7 @@ impl MessageBadge {
 }
 
 #[derive(IntoElement)]
+//(!) Incoming and outgoing messages (chat canvas)
 pub struct ChatMessage {
     side: MessageSide,
     name: SharedString,
@@ -190,8 +191,10 @@ impl RenderOnce for ChatMessage {
             .p_1()
             .rounded(px(2.0));
         if sender {
+            //(!) Outgoing message (chat canvas)
             message = message.child(content).child(face);
         } else {
+            //(!) Incoming message (chat canvas)
             message = message.child(face).child(content);
         }
         message

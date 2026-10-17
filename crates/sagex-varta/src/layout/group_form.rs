@@ -5,20 +5,15 @@
 //! (`GroupMembersSheet` holds the form entity); the canvas shows header,
 //! profile/aesthetics, privacy, and permissions.
 
-use std::rc::Rc;
-
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::base::actions::Cancel;
 use gpui_kit::base::input::{InputEvent, InputState};
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::WindowExt;
+use gpui_kit::component::switch::Switch;
 use gpui_kit::*;
 
 use crate::components::form_field::FormField;
-use crate::components::mono_link::MonoLink;
 use crate::theme;
-
-type BackHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// Group accent swatches: label + hex.
 const ACCENTS: &[(&str, u32)] = &[
@@ -163,7 +158,6 @@ pub struct GroupForm {
     copied: bool,
     error: Option<SharedString>,
     created: bool,
-    on_back: Option<BackHandler>,
     _watches: Vec<Subscription>,
 }
 
@@ -172,9 +166,8 @@ impl GroupForm {
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("Weekend Beach Hangout"));
         let description =
             cx.new(|cx| InputState::new(window, cx).placeholder("What is this circle about?"));
-        let member_search = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("@ username (e.g. alex, elena)")
-        });
+        let member_search =
+            cx.new(|cx| InputState::new(window, cx).placeholder("@ username (e.g. alex, elena)"));
         let fields = [&name, &description, &member_search];
         let mut _watches: Vec<Subscription> = fields
             .iter()
@@ -205,14 +198,8 @@ impl GroupForm {
             copied: false,
             error: None,
             created: false,
-            on_back: None,
             _watches,
         }
-    }
-
-    pub fn on_back(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_back = Some(Rc::new(handler));
-        self
     }
 
     pub(crate) fn slug(&self, cx: &mut Context<Self>) -> String {
@@ -279,37 +266,7 @@ impl GroupForm {
     }
 
     fn render_card(&self, title: &str, body: impl IntoElement) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .rounded(px(theme::radius::DEFAULT))
-            .bg(theme::rgb(theme::colors::SURFACE_LOWEST))
-            .border_1()
-            .border_color(theme::rgb(theme::colors::GRID_L1))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .w_full()
-                    .px_4()
-                    .py_2()
-                    .bg(theme::rgb(theme::colors::SURFACE_LOW))
-                    .border_b_1()
-                    .border_color(theme::rgb(theme::colors::GRID_L1))
-                    .child(div().w(px(6.0)).h(px(6.0)).bg(theme::rgb(theme::colors::PRIMARY)))
-                    .child(
-                        div()
-                            .font_family(theme::fonts::MONO)
-                            .text_size(px(10.0))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme::rgb(theme::colors::INK))
-                            .child(title.to_string()),
-                    ),
-            )
-            .child(div().w_full().p_4().child(body))
+        crate::components::section_card::SectionCard::new(title.to_string(), body)
             .into_any_element()
     }
 }
@@ -429,9 +386,7 @@ impl Render for GroupForm {
                                         .path("icons/check.svg")
                                         .w(px(10.0))
                                         .h(px(10.0))
-                                        .text_color(theme::rgb(
-                                            theme::colors::ON_PRIMARY,
-                                        )),
+                                        .text_color(theme::rgb(theme::colors::ON_PRIMARY)),
                                 )
                         } else {
                             div()
@@ -524,7 +479,6 @@ impl Render for GroupForm {
         }
 
         let cv = view.clone();
-        let back = self.on_back.clone();
         div()
             .flex()
             .flex_col()
@@ -544,101 +498,80 @@ impl Render for GroupForm {
                     .overflow_y_scroll()
                     .p_5()
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .w_full()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .justify_between()
-                                    .w_full()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_1()
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .flex_row()
-                                                    .items_center()
-                                                    .gap_1()
-                                                    .child(
-                                                        svg()
-                                                            .path("icons/users.svg")
-                                                            .w(px(12.0))
-                                                            .h(px(12.0))
-                                                            .text_color(theme::rgb(
-                                                                theme::colors::PRIMARY,
-                                                            )),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .font_family(theme::fonts::MONO)
-                                                            .text_size(px(10.0))
-                                                            .font_weight(FontWeight::BOLD)
-                                                            .text_color(theme::rgb(
-                                                                theme::colors::PRIMARY,
-                                                            ))
-                                                            .child("GROUPS / NEW GROUP SPEC"),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .font_family(theme::fonts::HEADLINE)
-                                                    .text_size(px(22.0))
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .text_color(theme::rgb(
-                                                        theme::colors::INK,
-                                                    ))
-                                                    .child("Create New Group"),
-                                            ),
-                                    )
-                                    .child(
-                                        BaseButton::new(ElementId::Name("group-create".into()))
-                                            .h(px(34.0))
-                                            .px_4()
-                                            .flex()
-                                            .flex_row()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .rounded(px(theme::radius::DEFAULT))
-                                            .bg(theme::rgb(theme_accent))
-                                            .text_color(theme::rgb(theme::colors::ON_PRIMARY))
-                                            .text_size(px(12.0))
-                                            .font_weight(FontWeight::BOLD)
-                                            .on_click(move |_, _, cx: &mut App| {
-                                                cv.update(cx, |p, cx| p.try_create(cx));
-                                            })
-                                            .child(
-                                                svg()
-                                                    .path("icons/check.svg")
-                                                    .w(px(14.0))
-                                                    .h(px(14.0))
-                                                    .text_color(theme::rgb(
-                                                        theme::colors::ON_PRIMARY,
-                                                    )),
-                                            )
-                                            .child("Create Group"),
-                                    ),
-                            )
-                            .child({
-                                let bv = view.clone();
-                                MonoLink::new("Back to chat").on_click(
-                                    move |_, window, cx: &mut App| {
-                                        if let Some(back) = back.clone() {
-                                            back(window, cx);
-                                        } else {
-                                            bv.update(cx, |_, _| {});
-                                        }
-                                    },
+                        div().flex().flex_col().gap_1().w_full().child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .justify_between()
+                                .w_full()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .items_center()
+                                                .gap_1()
+                                                .child(
+                                                    svg()
+                                                        .path("icons/users.svg")
+                                                        .w(px(12.0))
+                                                        .h(px(12.0))
+                                                        .text_color(theme::rgb(
+                                                            theme::colors::PRIMARY,
+                                                        )),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .font_family(theme::fonts::MONO)
+                                                        .text_size(px(10.0))
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .text_color(theme::rgb(
+                                                            theme::colors::PRIMARY,
+                                                        ))
+                                                        .child("GROUPS / NEW GROUP SPEC"),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .font_family(theme::fonts::HEADLINE)
+                                                .text_size(px(22.0))
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(theme::rgb(theme::colors::INK))
+                                                .child("Create New Group"),
+                                        ),
                                 )
-                            }),
+                                .child(
+                                    BaseButton::new(ElementId::Name("group-create".into()))
+                                        .h(px(34.0))
+                                        .px_4()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap_2()
+                                        .rounded(px(theme::radius::DEFAULT))
+                                        .bg(theme::rgb(theme_accent))
+                                        .text_color(theme::rgb(theme::colors::ON_PRIMARY))
+                                        .text_size(px(12.0))
+                                        .font_weight(FontWeight::BOLD)
+                                        .on_click(move |_, _, cx: &mut App| {
+                                            cv.update(cx, |p, cx| p.try_create(cx));
+                                        })
+                                        .child(
+                                            svg()
+                                                .path("icons/check.svg")
+                                                .w(px(14.0))
+                                                .h(px(14.0))
+                                                .text_color(theme::rgb(theme::colors::ON_PRIMARY)),
+                                        )
+                                        .child("Create Group"),
+                                ),
+                        ),
                     )
                     .child({
                         let notice: AnyElement = if let Some(error) = self.error.clone() {
@@ -689,9 +622,7 @@ impl Render for GroupForm {
                                                 .path("icons/photo.svg")
                                                 .w(px(24.0))
                                                 .h(px(24.0))
-                                                .text_color(theme::rgb(
-                                                    theme::colors::MUTED,
-                                                )),
+                                                .text_color(theme::rgb(theme::colors::MUTED)),
                                         ),
                                 )
                                 .child(FormField::new("GROUP NAME", self.name.clone()))
@@ -705,9 +636,7 @@ impl Render for GroupForm {
                                             div()
                                                 .font_family(theme::fonts::MONO)
                                                 .text_size(px(10.0))
-                                                .text_color(theme::rgb(
-                                                    theme::colors::MUTED,
-                                                ))
+                                                .text_color(theme::rgb(theme::colors::MUTED))
                                                 .child("Canonical Chat Slug:"),
                                         )
                                         .child(
@@ -722,9 +651,7 @@ impl Render for GroupForm {
                                                 ))
                                                 .font_family(theme::fonts::MONO)
                                                 .text_size(px(11.0))
-                                                .text_color(theme::rgb(
-                                                    theme::colors::PRIMARY,
-                                                ))
+                                                .text_color(theme::rgb(theme::colors::PRIMARY))
                                                 .child(SharedString::from(format!("#{slug}"))),
                                         ),
                                 )
@@ -751,26 +678,17 @@ impl Render for GroupForm {
                                             div()
                                                 .font_family(theme::fonts::MONO)
                                                 .text_size(px(10.0))
-                                                .text_color(theme::rgb(
-                                                    theme::colors::MUTED,
-                                                ))
+                                                .text_color(theme::rgb(theme::colors::MUTED))
                                                 .child("CHAT THEME ACCENT"),
                                         )
                                         .child(swatches),
                                 ),
                         ),
                     )
-                    .child(
-                        self.render_card(
-                            "Privacy & Access",
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_3()
-                                .w_full()
-                                .child(options),
-                        ),
-                    )
+                    .child(self.render_card(
+                        "Privacy & Access",
+                        div().flex().flex_col().gap_3().w_full().child(options),
+                    ))
                     .child(self.render_card("Media & Social Permissions", perms)),
             )
     }
@@ -802,9 +720,9 @@ impl GroupMembersSheet {
 impl Render for GroupMembersSheet {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity().clone();
-        let (members, copied) = self.form.read_with(cx, |form, _| {
-            (form.members().to_vec(), form.copied)
-        });
+        let (members, copied) = self
+            .form
+            .read_with(cx, |form, _| (form.members().to_vec(), form.copied));
         let link = self.invite_link(cx);
 
         let mut added = div().flex().flex_col().w_full();
@@ -882,6 +800,7 @@ impl Render for GroupMembersSheet {
                     .flex()
                     .flex_row()
                     .items_center()
+                    .justify_start()
                     .gap_2()
                     .py_2()
                     .border_b_1()
@@ -983,10 +902,7 @@ impl Render for GroupMembersSheet {
                             .font_family(theme::fonts::MONO)
                             .text_size(px(10.0))
                             .text_color(theme::rgb(theme::colors::MUTED))
-                            .child(SharedString::from(format!(
-                                "{} Added",
-                                members.len()
-                            ))),
+                            .child(SharedString::from(format!("{} Added", members.len()))),
                     ),
             )
             .child({
@@ -1023,13 +939,27 @@ impl Render for GroupMembersSheet {
                         div()
                             .flex()
                             .flex_row()
+                            .items_center()
                             .gap_2()
                             .w_full()
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .child(gpui_kit::base::input::Input::new(&form.read(cx).member_search)),
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .h(px(36.0))
+                                    .px_3()
+                                    .rounded(px(theme::radius::DEFAULT))
+                                    .bg(theme::rgb(theme::colors::SURFACE_LOWEST))
+                                    .border_1()
+                                    .border_color(theme::rgb(theme::colors::GRID_L2))
+                                    .text_size(px(12.0))
+                                    .text_color(theme::rgb(theme::colors::INK))
+                                    .child(gpui_kit::base::input::Input::new(
+                                        &form.read(cx).member_search,
+                                    )),
                             )
                             .child(
                                 BaseButton::new(ElementId::Name("group-add".into()))
@@ -1055,9 +985,7 @@ impl Render for GroupMembersSheet {
                                             .path("icons/user-plus.svg")
                                             .w(px(14.0))
                                             .h(px(14.0))
-                                            .text_color(theme::rgb(
-                                                theme::colors::ON_PRIMARY,
-                                            )),
+                                            .text_color(theme::rgb(theme::colors::ON_PRIMARY)),
                                     )
                                     .child("Add"),
                             ),
@@ -1114,9 +1042,7 @@ impl Render for GroupMembersSheet {
                                     .font_family(theme::fonts::MONO)
                                     .text_size(px(10.0))
                                     .text_color(theme::rgb(theme::colors::MUTED))
-                                    .child(
-                                        "Anyone with this link can request access",
-                                    ),
+                                    .child("Anyone with this link can request access"),
                             )
                             .child(
                                 BaseButton::new(ElementId::Name("group-copy-link".into()))

@@ -15,6 +15,7 @@ pub mod mono_link;
 pub mod otp_boxes;
 pub mod pinned_header;
 pub mod recipient_item;
+pub mod section_card;
 pub mod settings_button;
 pub mod side_search_bar;
 pub mod sso_button;

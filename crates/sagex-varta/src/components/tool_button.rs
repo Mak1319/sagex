@@ -13,6 +13,7 @@ use crate::theme;
 type ToolHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
+//(!) IconButton
 pub struct ToolButton {
     id: SharedString,
     icon: SharedString,
